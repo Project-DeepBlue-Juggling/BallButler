@@ -1,0 +1,91 @@
+# ==========================
+# Python
+# ==========================
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+venv/
+env/
+.venv/
+
+# ==========================
+# C++ / CMake / Build
+# ==========================
+build/
+install/
+dist/
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+
+# ==========================
+# ROS2 / Colcon
+# ==========================
+log/
+.colcon/
+*/*/build/
+*/*/build_isolated/
+*/*/devel/
+*/*/devel_isolated/
+*/*/logs/
+.rviz/
+*.user
+
+# ==========================
+# IDE and Editors
+# ==========================
+.vscode/
+.idea/
+*.swp
+.*.swo
+*~
+
+# ==========================
+# OS Generated
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# KiCAD
+# ==========================
+# Backup files
+*-backups/
+# Auto-saved files
+\#auto_saved_files\#/
+# Footprint cache (regenerated on open)
+fp-info-cache
+# 3D model cache
+*.3dshapes/
+# Gerber/drill outputs (regenerate from source)
+*-gerbers/
+# DXF exports (regenerate from source)
+*.dxf
+
+# ==========================
+# Data / Logs / Recordings
+# ==========================
+*.log
+*.mcap
+*.csv
+*.qtm
+**/metadata.yaml
+
+# ==========================
+# Simulation
+# ==========================
+sim/tests/results/
+
+# ==========================
+# Misc
+# ==========================
+*.bak
+*.tmp
+*.bkp
+.$*.drawio.bkp
+node_modules/
+.claude
