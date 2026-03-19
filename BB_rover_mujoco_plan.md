@@ -45,7 +45,21 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 
 ---
 
-## 2. Simulation Objectives
+## 2. Phase Summary
+
+| Phase | Status | Summary |
+|---|---|---|
+| **0 — Environment & Tooling Setup** | [ ] Incomplete | Set up MuJoCo Python project, flat ground plane, simulation loop, and gamepad/keyboard input. |
+| **1 — Rigid Chassis + Swerve Modules** | [ ] Incomplete | Build the MJCF model with 4 swerve modules, implement swerve drive inverse kinematics, and validate omnidirectional driving on flat ground. |
+| **2 — Suspension** | [ ] Incomplete | Add prismatic spring-damper joints modelling the splined-shaft suspension concept. Tune for ride quality over bumps and curb-cut ramps. |
+| **3 — Terrain & Obstacle Traversal** | [ ] Incomplete | Create heightfield terrains (concrete, cracked sidewalk, curb cuts, grass, gravel), build a multi-terrain course, and perform slope/tip-over analysis. |
+| **4 — Control Stack** | [ ] Incomplete | Model motor controller dynamics, implement the full swerve drive controller with rate limiting and wheel coordination, add path following and odometry. |
+| **5 — Power & Actuator Analysis** | [ ] Incomplete | Log per-motor torque/speed/power across terrain types and driving profiles. Size the battery and validate motor selection against simulation demands. |
+| **6 — Disturbance & Robustness Testing** | [ ] Incomplete | Test external impulses, actuator failures, and payload disturbances (e.g. throwing reaction forces). Identify safety margins and degraded-mode behaviour. |
+
+---
+
+## 3. Simulation Objectives
 
 1. **Validate the swerve drive kinematics** — confirm omnidirectional mobility, turning on the spot, and smooth trajectory following.
 2. **Tune suspension parameters** — find spring/damper values that keep the payload stable while allowing the wheels to track uneven terrain.
@@ -57,7 +71,7 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 
 ---
 
-## 3. Phased Implementation Plan
+## 4. Phased Implementation Plan
 
 ### Phase 0: Environment & Tooling Setup
 **Duration:** 1–2 days
@@ -258,7 +272,7 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 
 ---
 
-## 4. MJCF Model Structure (Sketch)
+## 5. MJCF Model Structure (Sketch)
 
 This is a high-level outline of the XML structure. Details will be refined during implementation.
 
@@ -297,23 +311,23 @@ sensor
 
 ---
 
-## 5. Key MuJoCo Modelling Decisions
+## 6. Key MuJoCo Modelling Decisions
 
-### 5.1 Wheel-Ground Contact
+### 6.1 Wheel-Ground Contact
 This is the single most important tuning parameter for a swerve drive simulation. The wheels need to grip laterally (no sliding) while allowing rolling. Key settings:
 - `condim="4"` — enables tangential friction in both directions plus torsional friction.
 - `friction="1.0 0.005 0.001"` — high tangential, low torsional and rolling friction.
 - Tune `solref` and `solimp` for the contact stiffness/damping to avoid instability at the simulation timestep.
 
-### 5.2 Actuator Modelling
+### 6.2 Actuator Modelling
 - **Drive motors:** Velocity-controlled with torque limits. Use `<velocity>` actuator with `ctrlrange` and `forcerange` to model the hoverboard motor's torque-speed curve.
 - **Yaw motors:** Position-controlled with velocity limits. Use `<position>` actuator with `kp` gain and `forcerange` for torque limit. The `kv` gain provides damping.
 
-### 5.3 Simulation Timestep
+### 6.3 Simulation Timestep
 - Start with 2 ms (500 Hz). If contact stability is an issue with the small suspension springs, reduce to 1 ms.
 - Control loop at 50–100 Hz (every 10–20 sim steps).
 
-### 5.4 What to Ignore (Initially)
+### 6.4 What to Ignore (Initially)
 - Electrical dynamics (motor inductance, controller bandwidth) — model as ideal torque sources initially.
 - Battery voltage sag — assume constant bus voltage.
 - Thermal effects — ignore motor heating.
@@ -322,39 +336,39 @@ This is the single most important tuning parameter for a swerve drive simulation
 
 ---
 
-## 6. Future Work — Ball Butler Integration
+## 7. Future Work — Ball Butler Integration
 
 These items are not part of the initial simulation phases but represent the natural extension once the rover platform is validated.
 
-### 6.1 Ball Butler Model
+### 7.1 Ball Butler Model
 - Model the Stewart platform as a 6-DoF parallel mechanism atop the rover chassis.
 - Include the linear throwing axis.
 - Apply the existing Ball Butler kinematics and dynamics models.
 - Simulate throwing while the rover is stationary and while moving — quantify the disturbance to the rover.
 
-### 6.2 Ball Collection Mechanism
+### 7.2 Ball Collection Mechanism
 - Model the pickup mechanism as an actuated linkage or conveyor at the front/side of the rover.
 - Simulate the rover driving toward a ball on the ground, collecting it, and transferring it to the hopper.
 - This requires modelling the ball as a free body with appropriate contact properties.
 
-### 6.3 Ball Storage (Hopper)
+### 7.3 Ball Storage (Hopper)
 - Model the hopper as a container with 5–10 balls as free bodies.
 - Simulate the effect of ball shifting on rover stability (dynamic CoG changes).
 - Model the feed mechanism from hopper to Ball Butler.
 
-### 6.4 Full Mission Simulation
+### 7.4 Full Mission Simulation
 - Combine rover navigation, ball collection, and ball throwing into a complete mission loop.
 - The rover drives to a ball, picks it up, drives to a throwing position, and Ball Butler throws it.
 - Validate that the full system works end-to-end in simulation before committing to hardware.
 
-### 6.5 Perception Stack (Sim-Only)
+### 7.5 Perception Stack (Sim-Only)
 - Add simulated LiDAR or depth camera sensors in MuJoCo.
 - Feed sensor data to a local planner (e.g., DWA or TEB planner).
 - Test the nunchuck → velocity command → local planner → swerve controller pipeline in sim.
 
 ---
 
-## 7. Estimated Timeline
+## 8. Estimated Timeline
 
 | Phase | Duration | Cumulative |
 |---|---|---|
@@ -372,7 +386,7 @@ Phases 1–3 are the highest priority — they answer the fundamental question o
 
 ---
 
-## 8. Open Questions
+## 9. Open Questions
 
 1. **Wheel track and wheelbase dimensions** — these determine the turning radius, tip-over stability, and overall footprint. Need to balance compactness (for sidewalks) with stability (tall CoG from Ball Butler).
 2. **Hoverboard motor internal friction / cogging** — may need measurement to model accurately. Cogging torque can be significant at low speeds.
