@@ -1,0 +1,74 @@
+<mujoco model="ballbutler_rover">
+  <!-- Phase 2: Swerve drive rover with spring-damper suspension -->
+
+  <!-- implicitfast integrator is more stable for spring-damper systems -->
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast">
+    <flag contact="enable" />
+  </option>
+
+  <default>
+    <geom condim="4" friction="0.9 0.005 0.001" solref="0.02 1" solimp="0.9 0.95 0.001" />
+    <joint damping="0.1" />
+  </default>
+
+  <visual>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.6 0.6 0.6" />
+    <quality shadowsize="4096" />
+    <map znear="0.01" zfar="50" />
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.8 0.8 0.8" rgb2="0.6 0.6 0.6"
+             width="512" height="512" />
+    <material name="ground_mat" texture="grid" texrepeat="8 8" reflectance="0.1" />
+    <material name="terrain_mat" rgba="0.65 0.6 0.55 1" />
+  </asset>
+
+  <!-- Rover: chassis, swerve modules, actuators, sensors, contacts -->
+  <include file="rover.xml" />
+
+  <worldbody>
+    <!-- Overhead light -->
+    <light pos="0 0 6" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" castshadow="true" />
+
+    <!-- Tracking camera -->
+    <camera name="track" pos="0 -4 3" xyaxes="1 0 0 0 0.6 0.8" mode="trackcom" />
+    <!-- Fixed overhead camera -->
+    <camera name="overhead" pos="0 0 8" zaxis="0 0 1" mode="fixed" />
+
+    <!-- Ground plane: 20x20 m concrete-like surface -->
+    <geom name="ground" type="plane" size="10 10 0.1" material="ground_mat"
+          friction="0.9 0.005 0.001" condim="4" />
+
+    <!-- ================================================================ -->
+    <!-- TEST TERRAIN (Phase 2 validation)                                -->
+    <!-- Bumps: 5-10 mm tall boxes at x=3..5 m along the x-axis          -->
+    <!-- Curb-cut ramp: ~70 mm rise at x=7 m                             -->
+    <!-- ================================================================ -->
+
+    <!-- Small bumps — varying height, 40 mm wide along x, 800 mm across y -->
+    <geom name="bump1" type="box" pos="3.0 0 0.0025" size="0.02 0.4 0.0025"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="bump2" type="box" pos="3.4 0 0.005" size="0.02 0.4 0.005"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="bump3" type="box" pos="3.8 0 0.0035" size="0.02 0.4 0.0035"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="bump4" type="box" pos="4.2 0 0.005" size="0.02 0.4 0.005"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="bump5" type="box" pos="4.6 0 0.004" size="0.02 0.4 0.004"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="bump6" type="box" pos="5.0 0 0.005" size="0.02 0.4 0.005"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <!-- Curb-cut ramp: 70 mm rise over 500 mm run (~8 degrees) -->
+    <!-- Ramp up: tilted slab, bottom edge at ground, top edge at z=0.07 -->
+    <geom name="ramp_up" type="box" pos="6.75 0 0.035" size="0.253 0.4 0.008"
+          euler="0 -8 0" material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <!-- Flat top: solid block 500 mm long at 70 mm height -->
+    <geom name="ramp_top" type="box" pos="7.5 0 0.035" size="0.25 0.4 0.035"
+          material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+    <!-- Ramp down: mirror of ramp up -->
+    <geom name="ramp_down" type="box" pos="8.25 0 0.035" size="0.253 0.4 0.008"
+          euler="0 8 0" material="terrain_mat" friction="0.9 0.005 0.001" condim="4" />
+  </worldbody>
+</mujoco>

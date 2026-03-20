@@ -1,0 +1,221 @@
+<mujoco>
+  <!-- ================================================================== -->
+  <!-- BallButler Rover — shared chassis, swerve modules, actuators,      -->
+  <!-- sensors, and contact exclusions.                                   -->
+  <!--                                                                    -->
+  <!-- Included by scene.xml and scene_terrain.xml.  Any changes here     -->
+  <!-- apply to ALL scenes automatically.                                 -->
+  <!--                                                                    -->
+  <!-- Coordinate frame: x-forward, y-left, z-up                         -->
+  <!-- Chassis centre at z=0.21 m (clearance above wheel tops)           -->
+  <!-- Chassis box: 480x480x80 mm                                        -->
+  <!-- Wheel centres at z=0.0825 m (wheel radius)                       -->
+  <!-- Track and wheelbase: 450 mm (+-225 mm from centre)                -->
+  <!--                                                                    -->
+  <!-- Module kinematic chain (from chassis outward):                     -->
+  <!--   yaw hinge (chassis-mounted motor) ->                            -->
+  <!--   prismatic slide (spline shaft suspension) ->                    -->
+  <!--   fork body ->                                                     -->
+  <!--   drive hinge (hub motor) ->                                      -->
+  <!--   wheel                                                            -->
+  <!--                                                                    -->
+  <!-- Suspension parameters:                                             -->
+  <!--   Sprung mass per corner: ~4.8 kg                                 -->
+  <!--   Stiffness: 3600 N/m  (natural freq ~4.4 Hz)                    -->
+  <!--   Damping: 100 N-s/m   (damping ratio ~0.39)                     -->
+  <!--   Travel: +-25 mm (50 mm total)                                   -->
+  <!--   springref: -0.013 m  (preload for ~zero static sag at q=0)     -->
+  <!-- ================================================================== -->
+
+  <asset>
+    <material name="chassis_mat" rgba="0.3 0.3 0.35 1" />
+    <material name="payload_mat" rgba="0.2 0.4 0.6 1" />
+    <material name="yaw_motor_mat" rgba="0.4 0.4 0.45 1" />
+    <material name="fork_mat" rgba="0.5 0.5 0.5 1" />
+    <material name="wheel_mat" rgba="0.15 0.15 0.15 1" />
+  </asset>
+
+  <!-- ================================================================== -->
+  <!-- CONTACT EXCLUSIONS                                                  -->
+  <!-- Parent-child exclusions are automatic in MuJoCo.  We only need     -->
+  <!-- explicit exclusions for non-adjacent bodies in the kinematic chain: -->
+  <!--   chassis -> yaw_body -> fork -> wheel                              -->
+  <!-- Automatic: chassis<->yaw_body, yaw_body<->fork, fork<->wheel       -->
+  <!-- Manual:    chassis<->fork, chassis<->wheel, yaw_body<->wheel        -->
+  <!-- ================================================================== -->
+  <contact>
+    <!-- FL module -->
+    <exclude body1="chassis" body2="fl_fork" />
+    <exclude body1="chassis" body2="fl_wheel" />
+    <exclude body1="fl_yaw_body" body2="fl_wheel" />
+    <!-- FR module -->
+    <exclude body1="chassis" body2="fr_fork" />
+    <exclude body1="chassis" body2="fr_wheel" />
+    <exclude body1="fr_yaw_body" body2="fr_wheel" />
+    <!-- RL module -->
+    <exclude body1="chassis" body2="rl_fork" />
+    <exclude body1="chassis" body2="rl_wheel" />
+    <exclude body1="rl_yaw_body" body2="rl_wheel" />
+    <!-- RR module -->
+    <exclude body1="chassis" body2="rr_fork" />
+    <exclude body1="chassis" body2="rr_wheel" />
+    <exclude body1="rr_yaw_body" body2="rr_wheel" />
+  </contact>
+
+  <worldbody>
+    <!-- ================================================================ -->
+    <!-- ROVER CHASSIS                                                     -->
+    <!-- ================================================================ -->
+    <body name="chassis" pos="0 0 0.21">
+      <freejoint name="chassis_free" />
+
+      <!-- Chassis box: 480x480x80 mm, 10 kg -->
+      <geom name="chassis_geom" type="box" size="0.24 0.24 0.04" mass="10"
+            material="chassis_mat" />
+
+      <!-- Lumped payload (Ball Butler + hopper + sensors + battery + compute) -->
+      <!-- Cylinder: 300 mm diameter, 200 mm tall, centred 140 mm above chassis centre -->
+      <geom name="payload" type="cylinder" pos="0 0 0.14" size="0.15 0.10" mass="8"
+            material="payload_mat" contype="0" conaffinity="0" />
+
+      <!-- IMU sensor site at chassis centre -->
+      <site name="imu_site" pos="0 0 0" size="0.01" />
+
+      <!-- ── FRONT-LEFT MODULE  (x=+0.225, y=+0.225) ─────────────── -->
+      <body name="fl_yaw_body" pos="0.225 0.225 -0.04">
+        <joint name="fl_yaw" type="hinge" axis="0 0 1" damping="2.0" />
+        <geom name="fl_yaw_geom" type="cylinder" size="0.02 0.012"
+              mass="0.3" material="yaw_motor_mat" contype="0" conaffinity="0" />
+        <body name="fl_fork" pos="0 0 0">
+          <joint name="fl_susp" type="slide" axis="0 0 1" limited="true"
+                 range="-0.025 0.025" stiffness="3600" damping="100"
+                 springref="-0.013" />
+          <geom name="fl_fork_geom" type="box" size="0.015 0.015 0.044"
+                pos="0 0 -0.044" mass="0.2" material="fork_mat" />
+          <body name="fl_wheel" pos="0 0 -0.0875">
+            <joint name="fl_drive" type="hinge" axis="0 1 0" damping="0.05" />
+            <geom name="fl_wheel_geom" type="cylinder" size="0.0825 0.025"
+                  euler="90 0 0" mass="2.5" material="wheel_mat"
+                  friction="1.0 0.005 0.001" condim="4" />
+          </body>
+        </body>
+      </body>
+
+      <!-- ── FRONT-RIGHT MODULE (x=+0.225, y=-0.225) ─────────────── -->
+      <body name="fr_yaw_body" pos="0.225 -0.225 -0.04">
+        <joint name="fr_yaw" type="hinge" axis="0 0 1" damping="2.0" />
+        <geom name="fr_yaw_geom" type="cylinder" size="0.02 0.012"
+              mass="0.3" material="yaw_motor_mat" contype="0" conaffinity="0" />
+        <body name="fr_fork" pos="0 0 0">
+          <joint name="fr_susp" type="slide" axis="0 0 1" limited="true"
+                 range="-0.025 0.025" stiffness="3600" damping="100"
+                 springref="-0.013" />
+          <geom name="fr_fork_geom" type="box" size="0.015 0.015 0.044"
+                pos="0 0 -0.044" mass="0.2" material="fork_mat" />
+          <body name="fr_wheel" pos="0 0 -0.0875">
+            <joint name="fr_drive" type="hinge" axis="0 1 0" damping="0.05" />
+            <geom name="fr_wheel_geom" type="cylinder" size="0.0825 0.025"
+                  euler="90 0 0" mass="2.5" material="wheel_mat"
+                  friction="1.0 0.005 0.001" condim="4" />
+          </body>
+        </body>
+      </body>
+
+      <!-- ── REAR-LEFT MODULE   (x=-0.225, y=+0.225) ─────────────── -->
+      <body name="rl_yaw_body" pos="-0.225 0.225 -0.04">
+        <joint name="rl_yaw" type="hinge" axis="0 0 1" damping="2.0" />
+        <geom name="rl_yaw_geom" type="cylinder" size="0.02 0.012"
+              mass="0.3" material="yaw_motor_mat" contype="0" conaffinity="0" />
+        <body name="rl_fork" pos="0 0 0">
+          <joint name="rl_susp" type="slide" axis="0 0 1" limited="true"
+                 range="-0.025 0.025" stiffness="3600" damping="100"
+                 springref="-0.013" />
+          <geom name="rl_fork_geom" type="box" size="0.015 0.015 0.044"
+                pos="0 0 -0.044" mass="0.2" material="fork_mat" />
+          <body name="rl_wheel" pos="0 0 -0.0875">
+            <joint name="rl_drive" type="hinge" axis="0 1 0" damping="0.05" />
+            <geom name="rl_wheel_geom" type="cylinder" size="0.0825 0.025"
+                  euler="90 0 0" mass="2.5" material="wheel_mat"
+                  friction="1.0 0.005 0.001" condim="4" />
+          </body>
+        </body>
+      </body>
+
+      <!-- ── REAR-RIGHT MODULE  (x=-0.225, y=-0.225) ─────────────── -->
+      <body name="rr_yaw_body" pos="-0.225 -0.225 -0.04">
+        <joint name="rr_yaw" type="hinge" axis="0 0 1" damping="2.0" />
+        <geom name="rr_yaw_geom" type="cylinder" size="0.02 0.012"
+              mass="0.3" material="yaw_motor_mat" contype="0" conaffinity="0" />
+        <body name="rr_fork" pos="0 0 0">
+          <joint name="rr_susp" type="slide" axis="0 0 1" limited="true"
+                 range="-0.025 0.025" stiffness="3600" damping="100"
+                 springref="-0.013" />
+          <geom name="rr_fork_geom" type="box" size="0.015 0.015 0.044"
+                pos="0 0 -0.044" mass="0.2" material="fork_mat" />
+          <body name="rr_wheel" pos="0 0 -0.0875">
+            <joint name="rr_drive" type="hinge" axis="0 1 0" damping="0.05" />
+            <geom name="rr_wheel_geom" type="cylinder" size="0.0825 0.025"
+                  euler="90 0 0" mass="2.5" material="wheel_mat"
+                  friction="1.0 0.005 0.001" condim="4" />
+          </body>
+        </body>
+      </body>
+
+    </body><!-- end chassis -->
+  </worldbody>
+
+  <!-- ================================================================== -->
+  <!-- ACTUATORS                                                          -->
+  <!-- Yaw: position-controlled (kp=50 N-m/rad, torque limit +-10 N-m)   -->
+  <!-- Drive: velocity-controlled (kv=10 N-m-s/rad, torque limit +-30 N-m)-->
+  <!-- Suspension is passive (spring-damper on the prismatic joint).      -->
+  <!-- ================================================================== -->
+  <actuator>
+    <!-- Yaw actuators (position control) -->
+    <position name="fl_yaw_act" joint="fl_yaw" kp="50" ctrlrange="-3.14159 3.14159"
+              forcerange="-10 10" />
+    <position name="fr_yaw_act" joint="fr_yaw" kp="50" ctrlrange="-3.14159 3.14159"
+              forcerange="-10 10" />
+    <position name="rl_yaw_act" joint="rl_yaw" kp="50" ctrlrange="-3.14159 3.14159"
+              forcerange="-10 10" />
+    <position name="rr_yaw_act" joint="rr_yaw" kp="50" ctrlrange="-3.14159 3.14159"
+              forcerange="-10 10" />
+
+    <!-- Drive actuators (velocity control) -->
+    <velocity name="fl_drive_act" joint="fl_drive" kv="10" ctrlrange="-30 30"
+              forcerange="-30 30" />
+    <velocity name="fr_drive_act" joint="fr_drive" kv="10" ctrlrange="-30 30"
+              forcerange="-30 30" />
+    <velocity name="rl_drive_act" joint="rl_drive" kv="10" ctrlrange="-30 30"
+              forcerange="-30 30" />
+    <velocity name="rr_drive_act" joint="rr_drive" kv="10" ctrlrange="-30 30"
+              forcerange="-30 30" />
+  </actuator>
+
+  <!-- ================================================================== -->
+  <!-- SENSORS                                                            -->
+  <!-- ================================================================== -->
+  <sensor>
+    <!-- Chassis IMU -->
+    <accelerometer name="imu_accel" site="imu_site" />
+    <gyro name="imu_gyro" site="imu_site" />
+
+    <!-- Yaw joint positions -->
+    <jointpos name="fl_yaw_pos" joint="fl_yaw" />
+    <jointpos name="fr_yaw_pos" joint="fr_yaw" />
+    <jointpos name="rl_yaw_pos" joint="rl_yaw" />
+    <jointpos name="rr_yaw_pos" joint="rr_yaw" />
+
+    <!-- Drive joint velocities -->
+    <jointvel name="fl_drive_vel" joint="fl_drive" />
+    <jointvel name="fr_drive_vel" joint="fr_drive" />
+    <jointvel name="rl_drive_vel" joint="rl_drive" />
+    <jointvel name="rr_drive_vel" joint="rr_drive" />
+
+    <!-- Suspension joint positions -->
+    <jointpos name="fl_susp_pos" joint="fl_susp" />
+    <jointpos name="fr_susp_pos" joint="fr_susp" />
+    <jointpos name="rl_susp_pos" joint="rl_susp" />
+    <jointpos name="rr_susp_pos" joint="rr_susp" />
+  </sensor>
+</mujoco>

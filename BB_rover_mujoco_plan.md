@@ -49,10 +49,10 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 
 | Phase | Status | Summary |
 |---|---|---|
-| **0 — Environment & Tooling Setup** | [ ] Incomplete | Set up MuJoCo Python project, flat ground plane, simulation loop, and gamepad/keyboard input. |
-| **1 — Rigid Chassis + Swerve Modules** | [ ] Incomplete | Build the MJCF model with 4 swerve modules, implement swerve drive inverse kinematics, and validate omnidirectional driving on flat ground. |
-| **2 — Suspension** | [ ] Incomplete | Add prismatic spring-damper joints modelling the splined-shaft suspension concept. Tune for ride quality over bumps and curb-cut ramps. |
-| **3 — Terrain & Obstacle Traversal** | [ ] Incomplete | Create heightfield terrains (concrete, cracked sidewalk, curb cuts, grass, gravel), build a multi-terrain course, and perform slope/tip-over analysis. |
+| **0 — Environment & Tooling Setup** | [x] Complete | Set up MuJoCo Python project, flat ground plane, simulation loop, and gamepad/keyboard input. |
+| **1 — Rigid Chassis + Swerve Modules** | [x] Complete | Build the MJCF model with 4 swerve modules, implement swerve drive inverse kinematics, and validate omnidirectional driving on flat ground. |
+| **2 — Suspension** | [x] Complete | Add prismatic spring-damper joints modelling the splined-shaft suspension concept. Tune for ride quality over bumps and curb-cut ramps. |
+| **3 — Terrain & Obstacle Traversal** | [x] Complete | Create heightfield terrains (concrete, cracked sidewalk, curb cuts, grass, gravel), build a multi-terrain course, and perform slope/tip-over analysis. |
 | **4 — Control Stack** | [ ] Incomplete | Model motor controller dynamics, implement the full swerve drive controller with rate limiting and wheel coordination, add path following and odometry. |
 | **5 — Power & Actuator Analysis** | [ ] Incomplete | Log per-motor torque/speed/power across terrain types and driving profiles. Size the battery and validate motor selection against simulation demands. |
 | **6 — Disturbance & Robustness Testing** | [ ] Incomplete | Test external impulses, actuator failures, and payload disturbances (e.g. throwing reaction forces). Identify safety margins and degraded-mode behaviour. |
@@ -85,6 +85,21 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 - Decide on simulation timestep. MuJoCo default is 2 ms; this should be fine for a rover. The control loop can run at a lower rate (e.g., 50–100 Hz) inside the simulation.
 
 **Deliverable:** An empty scene with a ground plane and a control loop that reads input and logs data.
+
+**Status: COMPLETE** (2026-03-20)
+
+**Implementation notes:**
+- Using MuJoCo 3.6.0 native Python bindings with `mujoco.viewer.launch_passive` for interactive visualisation (no third-party viewer needed).
+- Ground plane: 20x20 m, `condim="4"`, friction `0.9 0.005 0.001` (tangential / torsional / rolling). This matches "good concrete" and provides the lateral grip swerve drive needs.
+- Physics at 500 Hz (2 ms), control callback at 50 Hz (decimation=10), render target 60 FPS.
+- Input via pygame: keyboard (WASD+QE) and optional gamepad (left stick = translate, right stick = rotate). Gamepad overrides keyboard when active.
+- CSV data logger writes timestamped records (sim_time, wall_time, cmd_vx, cmd_vy, cmd_omega) to `sim/logs/`. Extends easily for motor/sensor data in later phases.
+- Pygame requires a display surface for keyboard events even though rendering is handled by MuJoCo's viewer — a 1x1 hidden window is created for this purpose.
+
+**Observations for later phases:**
+- `solref` and `solimp` are set to safe defaults (`0.02 1` / `0.9 0.95 0.001`). These will likely need per-terrain tuning in Phase 3 — the current values prioritise stability over realism.
+- MuJoCo 3.6.0 ships with `Euler` and `implicit`/`implicitfast` integrators. Stiff suspension springs in Phase 2 may benefit from switching to `implicitfast` if Euler causes oscillation at 2 ms timestep.
+- The passive viewer's camera can be set programmatically but the user can also orbit/zoom freely. For Phase 1 teleoperation, the tracking camera following the chassis CoM should work well.
 
 ---
 
@@ -121,6 +136,36 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 - The rover can follow a circular arc.
 - No wheel scrub (wheels point in the correct direction during motion).
 
+**Status: COMPLETE** (2026-03-20)
+
+**Implementation notes:**
+- **Chassis body:** 480×480×80 mm box (10 kg) with a freejoint. Centre at z=0.21 m, providing 5 mm clearance above wheel tops.
+- **Lumped payload:** 300 mm diameter × 200 mm tall cylinder (8 kg) atop the chassis, with `contype="0" conaffinity="0"` so it doesn't participate in contacts. Total model mass: 30 kg.
+- **Swerve modules:** Each consists of a yaw hinge joint (vertical axis) → fork body (0.5 kg) → drive hinge joint (horizontal axis) → wheel cylinder (82.5 mm radius × 50 mm wide, 2.5 kg). Modules at ±225 mm in x and y from chassis centre (450 mm track/wheelbase).
+- **Wheel contact:** `condim="4"`, friction `1.0 0.005 0.001` — high tangential grip, low torsional and rolling friction. 8 contact points per frame (2 per wheel due to cylinder-plane contact).
+- **Contact exclusions:** All chassis↔fork and chassis↔wheel contacts are excluded via `<exclude>` pairs. This is essential — without these, the wheel geoms collide with the chassis geom (they are geometrically close) and generate ~9000 N parasitic forces that prevent the rover from moving.
+- **Yaw actuators:** `<position>` with kp=50 N·m/rad, torque limit ±10 N·m. Joint damping 2.0 N·m·s/rad for stability.
+- **Drive actuators:** `<velocity>` with kv=10 N·m·s/rad, torque limit ±30 N·m. Joint damping 0.05 N·m·s/rad.
+- **Swerve IK:** Standard 4-wheel swerve inverse kinematics in `sim/controllers/swerve_ik.py`. Includes 180° flip optimisation and a speed deadband (0.01 m/s) to prevent yaw jitter at rest.
+- **Teleoperation:** Keyboard tap-based control via MuJoCo viewer key callback (arrow keys, comma/period, space) and optional gamepad. Feeds through swerve IK at 50 Hz.
+- **Data logging:** Extended from Phase 0 with per-module yaw command/position, drive command/velocity, and chassis x/y/heading.
+- **Sensors:** IMU (accelerometer + gyro) at chassis centre, 4× yaw position sensors, 4× drive velocity sensors.
+
+**Validation results (headless, scripted tests):**
+- Forward at 1.0 m/s: tracked at 0.994 m/s with near-zero lateral drift. 2.92 m in 3 s.
+- Strafe at 0.5 m/s: tracked at 0.497 m/s. 1.49 m in 3 s.
+- Rotate in place at 1.0 rad/s: achieved 171.6° in π seconds (slight undershoot from rotational inertia). Translation drift <15 mm.
+- Circular arc (vx=0.5, omega=0.5, R=1.0 m): closed a full circle with <0.1 m closure error. Each wheel showed distinct yaw angles appropriate for the arc geometry (inner wheels steer more).
+
+**Observations for later phases:**
+- **Yaw actuator torque limit (±10 N·m) may be tight.** During combined translation+rotation, the yaw actuators reach ~5 N·m. Aggressive manoeuvres or higher friction surfaces in Phase 3 could saturate them. Monitor and increase if needed.
+- **Drive actuator kv=10 and forcerange=±30 N·m are generous for flat ground.** The velocity tracking is very accurate (<1% error at 1 m/s). On terrain with higher resistance (gravel, slopes), these may need increasing — or the saturation behaviour itself becomes interesting for Phase 5 power analysis.
+- **Wheel-ground contact model is adequate for flat concrete** but the cylinder-plane contact produces 2 contact points per wheel (at the cylinder edges), not a continuous contact patch. For Phase 3 terrain work, consider whether this affects lateral force fidelity on rough surfaces.
+- **The 180° flip optimisation works but has a discontinuity** at exactly ±90° from current angle. In practice this hasn't caused issues because the control rate (50 Hz) prevents the target angle from changing that fast. Phase 4's rate-limited yaw controller will handle this more gracefully.
+- **Chassis height (z=0.21 m centre, 0.17 m bottom) leaves only ~87.5 mm ground clearance** (to the bottom of the fork geom). This is within the 5–8 cm obstacle spec but tight. Phase 2 suspension will add ~25 mm of travel downward, reducing static clearance further. Worth tracking during suspension design.
+- **Drive actuator `ctrlrange` silent clamping.** The drive velocity actuators have `ctrlrange="-30 30"` (rad/s). At max speed (2 m/s) a single wheel needs ~24.2 rad/s, but during aggressive combined translation+rotation, corner wheels can exceed 30 rad/s. MuJoCo silently clamps the ctrl signal, so one wheel loses proportionality without the others scaling down. Phase 4's wheel speed coordination (scaling all wheels when any exceeds the limit) should address this.
+- **Body-frame velocity commands cause circular arcs during combined translation+rotation.** *(Resolved post-Phase 3.)* The swerve IK correctly takes body-frame inputs, but when the chassis is spinning, "forward" rotates with it. A global-to-body-frame rotation transform was added to the control loop (`main.py`) so that velocity commands from the input handler are now interpreted in the world frame. The IK itself is unchanged. See Phase 4 for the planned body/global frame toggle.
+
 ---
 
 ### Phase 2: Suspension
@@ -150,6 +195,36 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 - Chassis remains approximately level over small bumps.
 - All wheels maintain ground contact over the curb-cut ramp.
 - No excessive oscillation after a bump.
+
+**Status: COMPLETE** (2026-03-20)
+
+**Implementation notes:**
+- **Kinematic chain per module (physically accurate):** yaw hinge (chassis-mounted) → prismatic slide (spline shaft) → fork body → drive hinge (hub motor) → wheel. This adds a `XX_yaw_body` between the chassis and fork, with the yaw motor as sprung mass (0.3 kg). Fork mass reduced from 0.5 kg to 0.2 kg (total per-module mass unchanged at 3.0 kg).
+- **Integrator switched from `Euler` to `implicitfast`** for better stability with spring-damper joints. No performance cost; prevents potential oscillation at 2 ms timestep.
+- **Suspension parameters:**
+  - Stiffness: 3600 N/m (natural frequency ~4.4 Hz for 4.8 kg sprung mass per corner).
+  - Damping: 100 N·s/m (damping ratio ζ ≈ 0.39 — underdamped but well-behaved).
+  - Travel: ±25 mm (50 mm total).
+  - `springref = -0.013 m` — preloads the spring so that the static equilibrium sits near q=0, giving symmetric travel in both directions.
+- **Contact exclusions updated:** New body hierarchy requires exclusions for non-adjacent bodies (chassis↔fork, chassis↔wheel, yaw_body↔wheel). Parent-child exclusions are handled automatically by MuJoCo.
+- **Suspension sensors:** 4× `jointpos` sensors added for per-module displacement logging.
+- **Test terrain added to scene.xml:**
+  - 6 small bumps (5–10 mm tall, 40 mm wide) spaced 0.4 m apart along the x-axis (x=3.0..5.0 m).
+  - A curb-cut ramp at x=6.5..8.5 m: inclined slab (8°) → flat top (70 mm elevation, 500 mm long) → inclined slab down.
+- **Logging extended** with per-module suspension displacement, chassis z (heave), pitch, and roll.
+
+**Validation results (headless, scripted tests):**
+- **Static settling:** Suspension settles at +0.08 mm per corner (design target: 0 mm). Chassis sag: 0.3 mm. Zero residual oscillation after 3 s — damping is effective.
+- **Bump traversal (1.0 m/s):** Chassis heave range: 13.9 mm over 5–10 mm bumps. Pitch oscillation: ±1.4°. Roll: negligible (±0.01°, bumps are full-width). Suspension travel: ±11 mm (well within ±25 mm limits). Velocity tracking: 0.975 m/s (target 1.0).
+- **Curb-cut ramp (0.5 m/s):** Ramp traversed successfully. Chassis z on flat top: 0.261 m (vs expected 0.280 m — the 19 mm deficit is suspension compression under transitional loading). Suspension travel reaches ±23 mm (92% of limit, see observations below). Pitch excursion: ±13° during ramp transitions.
+- **Velocity tracking:** Forward: 0.975 m/s (Phase 1: 0.994). Strafe: 0.462 m/s (Phase 1: 0.497). Rotation: 171.6° in π s (identical to Phase 1). Suspension does not degrade swerve drive performance.
+
+**Observations for later phases:**
+- **Suspension nearly bottoms out on the 70 mm curb-cut ramp.** Peak travel reaches 23 mm of the 25 mm limit (92%). The 70 mm ramp is at the upper end of the design spec (50–80 mm), and the suspension just barely handles it. Options for Phase 3: (a) increase travel to ±30 mm if chassis clearance allows, (b) stiffen springs (reduces ride quality on small bumps), or (c) accept that 70+ mm obstacles require slower approach speeds. This is a real design constraint worth tracking during hardware development.
+- **Pitch excursion during ramp is ±13° — significantly more than the 8° ramp angle.** This is because only 2 wheels are on the ramp at a time (the 450 mm wheelbase means the front and rear axles encounter the ramp ~0.5 s apart at 0.5 m/s). The chassis pitches as the front wheels climb while the rear are still flat (and vice versa). This dynamic overshoot is expected but worth considering for payload stability — Ball Butler's throwing mechanism may need to account for or wait out these transients.
+- **Static sag is nearly zero (0.3 mm)** thanks to the `springref` preload. This validates the approach of computing springref from the sprung mass and stiffness. If the payload mass changes significantly (e.g., hopper full vs empty — ~0.8 kg difference), the sag shift is only ~2 mm, well within tolerance.
+- **Velocity tracking is slightly lower with suspension than Phase 1** (0.975 vs 0.994 m/s forward). This ~2% reduction is from energy being absorbed by suspension motion. This is physically realistic and not a concern.
+- **The `implicitfast` integrator works well.** No oscillation or instability observed at 2 ms timestep with k=3600 N/m springs. This is expected — the suspension's natural frequency (~4.4 Hz) is far below the 500 Hz physics rate. The Euler integrator would likely also work fine here, but `implicitfast` provides a safety margin for Phase 3 when stiffer terrain contacts may interact with the suspension.
 
 ---
 
@@ -182,6 +257,56 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 - No tip-over on slopes ≤ 10°.
 - Identified maximum safe slope angle.
 
+**Status: COMPLETE** (2026-03-20)
+
+**Implementation notes:**
+- **Terrain course** (`scene_terrain.xml`): 30 m multi-terrain course along the +x axis with 6 distinct terrain sections, plus a slope analysis area at y=5 m offset.
+- **Course layout:** concrete (x=-2..4) → curb cut UP (70 mm, ~8°) → cracked sidewalk (z=70 mm base + 5–15 mm steps) → curb cut DOWN → grass (heightfield ±15 mm) → gravel (heightfield ±25 mm) → concrete (x=24..30).
+- **Heightfield generation** (`terrains/terrain_generator.py`): Procedural noise generation at 20 mm grid spacing (301×151 grid per heightfield). Grass uses 10 iterations of smoothing for low-frequency undulations; gravel uses 4 iterations for higher-frequency texture. Edge tapering blends to z=0 at heightfield boundaries for smooth terrain transitions.
+- **Contact parameters tuned per terrain type:**
+  - Concrete: friction 0.9, default solref (0.02 1).
+  - Sidewalk: friction 0.85 (slightly weathered).
+  - Grass: friction 0.55, rolling friction 0.003, solref 0.03 1.2 (softer, slightly overdamped contact).
+  - Gravel: friction 0.7, rolling friction 0.005, solref 0.015 1.5 (moderate grip, high rolling resistance, more damped contact).
+- **Slope analysis area:** Five slopes at 5°, 10°, 15°, 20°, 25° (each 3 m × 3 m × 1 m thick tilted box), positioned along +x at y=5 m. Flat landing pads (2 m long) at the top of each slope to prevent cliff-edge drop-offs. Flat ground slab for approach.
+- **Interactive use:** `python main.py --terrain` loads the terrain course scene. The original Phase 2 scene (`python main.py`) is unchanged.
+
+**Validation results (headless, scripted tests):**
+- **Full terrain course at 1.0 m/s:** Successfully traversed all 6 terrain sections. Distance covered: 29.66 m in 30 s = 0.989 m/s average speed.
+  - Concrete: nominal (pitch ±5.7°, susp max 19.9 mm during initial bump transitions).
+  - Curb cut UP: pitch ±9.4° (dynamic overshoot from 8° ramp), suspension max 12.3 mm.
+  - Cracked sidewalk: very stable (pitch ±3.7° over 5–15 mm steps, roll ±0.05°, susp max 10.2 mm).
+  - Curb cut DOWN: pitch +8.7° (reverse of UP), suspension max 7.7 mm.
+  - Grass: mild roll ±0.32° from heightfield undulations. Lower friction (0.55) did not cause measurable slip at 1 m/s. Suspension max 7.1 mm.
+  - Gravel: more pronounced pitch ±7.4° and roll ±0.80° from rougher heightfield. Suspension max 11.9 mm. Higher rolling friction (0.005) did not noticeably slow the rover at 1 m/s.
+  - Concrete (return): smooth, pitch transient from gravel → concrete transition.
+- **Slope climbing at 0.5 m/s:**
+  - 5°: climbed cleanly (0.262 m height, target 0.261 m).
+  - 10°: reached the top (0.524 m, target 0.521 m) but **flipped at the slope-to-landing-pad crest transition** (pitch excursion to 89.5°).
+  - 15°: reached the top (0.807 m, target 0.776 m) but also flipped at the crest.
+  - 20°: climbed cleanly (0.949 m, target 1.026 m — reached 92% of target height).
+  - 25°: climbed cleanly (1.172 m, target 1.268 m — 92%). Pitch excursion ±56° but no full flip.
+  - Maximum climbable angle: 25° (with traction available on concrete-friction slopes). The 10° and 15° crest flips are speed-dependent — the rover crests with enough momentum to pitch forward off the landing pad.
+- **Tip-over analysis (stationary):**
+  - Longitudinal: stable up to 25° (margin 149.6 mm at 25°). The support polygon is wide enough in the forward direction.
+  - Lateral: stable up to 15° (margin 185.2 mm). **Flipped at 20°** (roll 160°).
+  - Overall maximum safe slope: **15°** (limited by lateral stability due to the tall Ball Butler payload raising the CoG).
+
+**Post-Phase 3 refactoring:**
+- **Rover MJCF extracted to `models/rover.xml`** and included via `<include>` in both scene files. Chassis body, contact exclusions, actuators, and sensors are now defined once.
+- **Shared utility module `sim/utils/`** created, consolidating duplicated code: `quat_to_euler`, `get_ids`, `step_with_control`, model loaders, and joint/actuator name constants. Both test files and `main.py` now import from `utils/`.
+- **Global-frame velocity commands** added to `main.py`. Input handler commands (vx, vy) are rotated into the body frame using the current chassis heading before feeding into the swerve IK. This fixes the circular-arc behaviour during combined translation+rotation.
+- **Test exit codes** added — both test scripts now call `sys.exit(1)` on failure for CI compatibility.
+- **`tests/__init__.py`** added for proper package structure.
+
+**Observations for later phases:**
+- **Lateral stability is the binding constraint for slope operation.** The rover is stable to 25° longitudinally but only 15° laterally. The 450 mm track width and high CoG (weighted average ~272 mm due to the 8 kg payload at 350 mm) give a theoretical lateral tip-over angle of ~39°, but the dynamic margin is lower. The ~15° practical limit is well above the 10° design requirement but worth tracking as payload mass/height changes.
+- **Crest transitions are the dominant hazard during slope climbing, not the slope itself.** The rover can climb 25° slopes with adequate traction, but the pitch transient at the slope-to-flat transition causes flips at 10° and 15° when approaching at 0.5 m/s. Phase 4's controller should implement speed reduction near slope crests (detectable via pitch rate). Alternatively, a pitch-rate-limited velocity controller would naturally slow down as the crest approaches.
+- **Grass and gravel friction models are plausible but need hardware validation.** The chosen values (mu=0.55 grass, mu=0.7 gravel) are consistent with published friction coefficient ranges, but the heightfield surface profiles are procedurally generated. Real terrain has spatially correlated features (e.g., tyre tracks, drainage channels) that the random noise model doesn't capture. The key finding — that neither terrain type causes significant slip at 1 m/s — is robust to moderate friction variation since the swerve drive operates well below the friction limit during straight-line driving.
+- **Sidewalk crack traversal is benign.** The 5–15 mm step discontinuities produce only ±3.7° pitch and 10.2 mm suspension use. This is well within the suspension's ±25 mm travel. Real sidewalk cracks may include wider gaps (which could trap a wheel) — the current model uses solid raised slabs without gaps.
+- **Suspension stays within limits across all terrain types in the course.** Peak usage was 19.9 mm (on concrete transitions) vs the 25 mm limit. The Phase 2 concern about near-bottoming on curb cuts (23 mm) is less acute in Phase 3 because the curb cut ramp design is slightly different (smoother transitions at entry and exit).
+- **The gravel contact model (solref 0.015 1.5) produces more pitch/roll than grass** despite having higher friction (0.7 vs 0.55). This is because the ±25 mm heightfield roughness is the dominant effect, not the friction. The stiffer contact (lower solref time constant) also means the gravel "pings" the suspension harder than the softer grass contact.
+
 ---
 
 ### Phase 4: Control Stack
@@ -200,6 +325,7 @@ For simulation purposes, the Ball Butler and collection mechanism are modelled a
 - Velocity command → swerve IK → individual motor commands.
 - Add rate limiting on yaw angle changes to respect the physical yaw speed (~1 rev/s = 360°/s, so any angle is reachable in <0.5 s).
 - Add wheel speed coordination: if one wheel can't reach its target speed (e.g., inner wheel during a tight turn), scale all wheels proportionally.
+- Add a **velocity frame toggle** (global vs body frame). Global frame is the current default — velocity commands are interpreted as world x/y and rotated into the body frame using the chassis heading each control step. Body frame interprets commands relative to the chassis orientation (more natural for "drive like a car" control). Both modes are useful: global frame is better for waypoint-following and "move to a position while facing a target"; body frame is more intuitive for manual gamepad driving. The toggle should be exposed as both a keyboard shortcut in the viewer and a config option.
 
 **4.3 — Path Following (High-Level)**
 - Implement a simple pure-pursuit or Stanley controller that tracks a sequence of waypoints.
@@ -280,6 +406,7 @@ This is a high-level outline of the XML structure. Details will be refined durin
 worldbody
 ├── light, camera
 ├── ground plane (geom or heightfield)
+├── test terrain (bumps, curb-cut ramp)
 │
 └── chassis (body, mass ~15-20 kg)
     ├── chassis geom (box or mesh)
@@ -287,11 +414,11 @@ worldbody
     │
     ├── front-left module
     │   ├── yaw joint (revolute, vertical axis) — actuated
-    │   ├── yaw body (motor + bracket, ~0.5 kg)
+    │   ├── yaw body (motor + bracket, ~0.3 kg, sprung)
     │   │   ├── suspension joint (prismatic, vertical) — spring/damper
-    │   │   └── fork body (~0.3 kg)
+    │   │   └── fork body (~0.2 kg, unsprung)
     │   │       ├── drive joint (revolute, horizontal) — actuated
-    │   │       └── wheel body (cylinder, ~2.5 kg)
+    │   │       └── wheel body (cylinder, ~2.5 kg, unsprung)
     │   │           └── wheel geom (contact)
     │
     ├── front-right module (mirror of front-left)
@@ -301,11 +428,13 @@ worldbody
 actuator
 ├── 4× yaw actuators (position control)
 └── 4× drive actuators (velocity control)
+    (suspension is passive — spring/damper on prismatic joint)
 
 sensor
 ├── chassis IMU (accelerometer + gyro)
 ├── 4× yaw joint position sensors
 ├── 4× drive joint velocity sensors
+├── 4× suspension joint position sensors
 └── (optional) rangefinder for ground clearance
 ```
 

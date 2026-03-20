@@ -1,0 +1,151 @@
+<mujoco model="ballbutler_rover_terrain">
+  <!-- Phase 3: Swerve drive rover with multi-terrain course and slope analysis -->
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast">
+    <flag contact="enable" />
+  </option>
+
+  <default>
+    <geom condim="4" friction="0.9 0.005 0.001" solref="0.02 1" solimp="0.9 0.95 0.001" />
+    <joint damping="0.1" />
+  </default>
+
+  <visual>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.6 0.6 0.6" />
+    <quality shadowsize="4096" />
+    <map znear="0.01" zfar="100" />
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.8 0.8 0.8" rgb2="0.6 0.6 0.6"
+             width="512" height="512" />
+    <material name="ground_mat" texture="grid" texrepeat="8 8" reflectance="0.1" />
+    <material name="concrete_mat" rgba="0.75 0.73 0.70 1" />
+    <material name="sidewalk_mat" rgba="0.70 0.68 0.65 1" />
+    <material name="curb_mat" rgba="0.65 0.63 0.60 1" />
+    <material name="grass_mat" rgba="0.35 0.55 0.30 1" />
+    <material name="gravel_mat" rgba="0.55 0.50 0.42 1" />
+    <material name="slope_mat" rgba="0.60 0.58 0.55 1" />
+
+    <!-- Heightfield assets (data populated by terrain_generator.py) -->
+    <!-- Row = x-axis, Col = y-axis.  301 x 151 gives 2 cm grid spacing -->
+    <!-- size = (x_half, y_half, elevation_max, elevation_min) -->
+    <hfield name="grass_hfield" nrow="301" ncol="151" size="3 1.5 0.015 0.015" />
+    <hfield name="gravel_hfield" nrow="301" ncol="151" size="3 1.5 0.025 0.025" />
+  </asset>
+
+  <!-- Rover: chassis, swerve modules, actuators, sensors, contacts -->
+  <include file="rover.xml" />
+
+  <worldbody>
+    <!-- Lighting — two lights for even coverage over the 30 m course -->
+    <light pos="0 0 8" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3"
+           castshadow="true" />
+    <light pos="18 0 8" dir="0 0 -1" diffuse="0.5 0.5 0.5" specular="0.2 0.2 0.2"
+           castshadow="false" />
+
+    <!-- Cameras -->
+    <camera name="track" pos="0 -4 3" xyaxes="1 0 0 0 0.6 0.8" mode="trackcom" />
+    <camera name="overhead" pos="14 0 25" zaxis="0 0 1" mode="fixed" />
+    <camera name="course_side" pos="14 -8 3" xyaxes="1 0 0 0 0.4 0.9" mode="fixed" />
+
+    <!-- ================================================================ -->
+    <!-- GROUND PLANE  (fallback + concrete surface at z=0)              -->
+    <!-- ================================================================ -->
+    <geom name="ground" type="plane" size="25 15 0.1" material="ground_mat"
+          friction="0.9 0.005 0.001" condim="4" />
+
+    <!-- ================================================================ -->
+    <!-- TERRAIN COURSE  (along +x axis, 3 m wide centred at y=0)       -->
+    <!--                                                                 -->
+    <!-- Layout:                                                         -->
+    <!--   x = -2..4   Concrete  (ground plane, mu=0.9)                 -->
+    <!--   x =  4..5   Curb cut UP  (ramp 0->70 mm, ~8deg)              -->
+    <!--   x =  5..11  Cracked sidewalk  (z=70 mm, 5-15 mm steps)      -->
+    <!--   x = 11..12  Curb cut DOWN  (ramp 70->0 mm)                   -->
+    <!--   x = 12..18  Grass  (heightfield +-15 mm, mu=0.55)            -->
+    <!--   x = 18..24  Gravel (heightfield +-25 mm, mu=0.7)             -->
+    <!--   x = 24..30  Concrete  (ground plane)                         -->
+    <!-- ================================================================ -->
+
+    <!-- ── Curb Cut UP (x=4..5) ─────────────────────────────────────── -->
+    <geom name="ramp_up" type="box" pos="4.25 0 0.035" size="0.253 1.5 0.008"
+          euler="0 -8 0" material="curb_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="curb_top_start" type="box" pos="4.75 0 0.035" size="0.25 1.5 0.035"
+          material="curb_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <!-- ── Cracked Sidewalk (x=5..11, surface at z=0.07) ────────────── -->
+    <geom name="sidewalk_base" type="box" pos="8 0 0.035" size="3 1.5 0.035"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+
+    <geom name="crack1" type="box" pos="5.5 0 0.075" size="0.15 1.5 0.005"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack2" type="box" pos="6.3 0 0.0735" size="0.10 1.5 0.0035"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack3" type="box" pos="7.1 0 0.0775" size="0.20 1.5 0.0075"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack4" type="box" pos="7.8 0 0.0725" size="0.08 1.5 0.0025"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack5" type="box" pos="8.5 0 0.076" size="0.25 1.5 0.006"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack6" type="box" pos="9.2 0 0.074" size="0.12 1.5 0.004"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack7" type="box" pos="9.9 0 0.075" size="0.15 1.5 0.005"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+    <geom name="crack8" type="box" pos="10.5 0 0.0765" size="0.10 1.5 0.0065"
+          material="sidewalk_mat" friction="0.85 0.005 0.001" condim="4" />
+
+    <!-- ── Curb Cut DOWN (x=11..12) ─────────────────────────────────── -->
+    <geom name="curb_top_end" type="box" pos="11.25 0 0.035" size="0.25 1.5 0.035"
+          material="curb_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="ramp_down" type="box" pos="11.75 0 0.035" size="0.253 1.5 0.008"
+          euler="0 8 0" material="curb_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <!-- ── Grass (x=12..18) ─────────────────────────────────────────── -->
+    <geom name="grass_terrain" type="hfield" hfield="grass_hfield"
+          pos="15 0 0.015" material="grass_mat"
+          friction="0.55 0.005 0.003" condim="4"
+          solref="0.03 1.2" solimp="0.85 0.95 0.001" />
+
+    <!-- ── Gravel (x=18..24) ────────────────────────────────────────── -->
+    <geom name="gravel_terrain" type="hfield" hfield="gravel_hfield"
+          pos="21 0 0.025" material="gravel_mat"
+          friction="0.7 0.005 0.005" condim="4"
+          solref="0.015 1.5" solimp="0.8 0.95 0.001" />
+
+    <!-- ================================================================ -->
+    <!-- SLOPE ANALYSIS AREA  (y = 5, 3 m wide from y=3.5 to y=6.5)    -->
+    <!-- Five slopes at 5deg, 10deg, 15deg, 20deg, 25deg spaced along +x -->
+    <!-- ================================================================ -->
+
+    <!-- Flat ground for slope approach / recovery -->
+    <geom name="slope_ground" type="box" pos="14 5 -0.05" size="16 2 0.05"
+          material="concrete_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <!-- Slopes + flat landing pads at the top of each slope -->
+    <geom name="slope_5" type="box" pos="2 5 -0.367" size="1.5 1.5 0.5"
+          euler="0 -5 0" material="slope_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="landing_5" type="box" pos="4.5 5 0.131" size="1.0 1.5 0.131"
+          material="concrete_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <geom name="slope_10" type="box" pos="8 5 -0.232" size="1.5 1.5 0.5"
+          euler="0 -10 0" material="slope_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="landing_10" type="box" pos="10.5 5 0.260" size="1.0 1.5 0.260"
+          material="concrete_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <geom name="slope_15" type="box" pos="14 5 -0.095" size="1.5 1.5 0.5"
+          euler="0 -15 0" material="slope_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="landing_15" type="box" pos="16.5 5 0.388" size="1.0 1.5 0.388"
+          material="concrete_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <geom name="slope_20" type="box" pos="20 5 0.043" size="1.5 1.5 0.5"
+          euler="0 -20 0" material="slope_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="landing_20" type="box" pos="22.5 5 0.513" size="1.0 1.5 0.513"
+          material="concrete_mat" friction="0.9 0.005 0.001" condim="4" />
+
+    <geom name="slope_25" type="box" pos="26 5 0.181" size="1.5 1.5 0.5"
+          euler="0 -25 0" material="slope_mat" friction="0.9 0.005 0.001" condim="4" />
+    <geom name="landing_25" type="box" pos="28.5 5 0.634" size="1.0 1.5 0.634"
+          material="concrete_mat" friction="0.9 0.005 0.001" condim="4" />
+  </worldbody>
+</mujoco>

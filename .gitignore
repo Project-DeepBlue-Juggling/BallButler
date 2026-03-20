@@ -79,6 +79,7 @@ fp-info-cache
 # Simulation
 # ==========================
 sim/tests/results/
+sim/logs/
 
 # ==========================
 # Misc

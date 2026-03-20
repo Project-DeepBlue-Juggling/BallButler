@@ -41,11 +41,11 @@ The full Ball Butler is a standalone mobile robot comprising:
 
 The rover platform is being developed **simulation-first** in MuJoCo before committing to hardware. The full simulation plan is documented in [`BB_rover_mujoco_plan.md`](BB_rover_mujoco_plan.md) and covers six phases:
 
-1. **Environment & tooling setup** — MuJoCo scene, control loop, input handling
-2. **Rigid chassis + swerve modules** — driveable swerve drive on flat ground, inverse kinematics, teleoperation
-3. **Suspension** — spring-damper prismatic joints modelling the splined-shaft suspension concept, ride quality tuning
-4. **Terrain & obstacle traversal** — heightfield terrains (concrete, cracked sidewalk, curb cuts, grass, gravel), slope/tip-over analysis
-5. **Control stack** — motor controller modelling, swerve drive controller, path following, odometry & state estimation
+1. ~~**Environment & tooling setup**~~ — MuJoCo scene, control loop, input handling **(done)**
+2. ~~**Rigid chassis + swerve modules**~~ — driveable swerve drive on flat ground, inverse kinematics, teleoperation **(done)**
+3. ~~**Suspension**~~ — spring-damper prismatic joints modelling the splined-shaft suspension concept, ride quality tuning **(done)**
+4. ~~**Terrain & obstacle traversal**~~ — heightfield terrains (concrete, cracked sidewalk, curb cuts, grass, gravel), multi-terrain course, slope/tip-over analysis **(done)**
+5. **Control stack** — motor controller modelling, swerve drive controller, velocity frame toggle (global/body), path following, odometry & state estimation
 6. **Power & actuator analysis** — torque/speed/power logging, battery sizing, motor sizing validation
 7. **Disturbance & robustness testing** — external forces, actuator failures, payload shift from throwing
 
@@ -90,6 +90,26 @@ BallButler/
 │   └── ...                         #   Other hardware tests
 │
 ├── BB_rover_mujoco_plan.md         # MuJoCo simulation plan for the rover platform
+├── sim/                            # MuJoCo rover simulation (Phase 3 complete)
+│   ├── main.py                    #   Simulation entry point — control loop, global-frame velocity, terrain support
+│   ├── config.py                  #   Simulation parameters
+│   ├── input_handler.py           #   Keyboard/gamepad → velocity commands
+│   ├── data_logger.py             #   CSV data logging
+│   ├── models/                    #   MJCF model files
+│   │   ├── rover.xml              #   Shared rover body, actuators, sensors, contacts (included by scenes)
+│   │   ├── scene.xml              #   Flat ground + Phase 2 test terrain (bumps, curb-cut ramp)
+│   │   └── scene_terrain.xml      #   Multi-terrain course + slope analysis area (Phase 3)
+│   ├── controllers/               #   Control algorithms
+│   │   └── swerve_ik.py           #   Swerve drive inverse kinematics (4-wheel, with 180° flip optimisation)
+│   ├── utils/                     #   Shared utilities (transforms, model helpers, sim runner, constants)
+│   ├── terrains/                  #   Heightfield terrain generation
+│   │   └── terrain_generator.py   #   Procedural grass/gravel heightfield generation
+│   ├── tests/                     #   Simulation test scenarios (exit 1 on failure)
+│   │   ├── test_suspension.py     #   Phase 2 headless suspension validation
+│   │   └── test_terrain.py        #   Phase 3 terrain course + slope/tip-over validation
+│   ├── logs/                      #   CSV data logs (gitignored)
+│   └── requirements.txt           #   Python dependencies
+│
 ├── bb_pitch_odrive_micro_config.json  # ODrive configuration for the pitch axis
 └── .gitignore
 ```
@@ -104,12 +124,6 @@ BallButler/
 │   ├── firmware/                   #   Motor controller firmware (moteus)
 │   ├── config/                     #   Rover hardware configuration
 │   └── cad/                        #   Mechanical design exports
-│
-├── sim/                            # MuJoCo simulation (planned)
-│   ├── models/                     #   MJCF model files
-│   ├── controllers/                #   Swerve drive IK, path following
-│   ├── terrains/                   #   Heightfield terrain definitions
-│   └── tests/                      #   Simulation test scenarios
 │
 ├── navigation/                     # Navigation & perception (planned)
 │   ├── local_planner/              #   Obstacle avoidance
