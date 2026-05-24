@@ -283,6 +283,22 @@ namespace OpCfg {
 }
 
 // ============================================================================
+// 12b. Axis-Settled Gate (predictive timing for executeThrow_)
+//     Firmware-local — not sourced from hardware_config.h. Tune here.
+// ============================================================================
+namespace AxisSettleCfg {
+  // Conservative worst-case yaw traverse rate used to predict, at queue time,
+  // how long the yaw axis will need to reach a commanded angle. Lower values
+  // bias toward rejecting throws whose lead time is too short; raise it if the
+  // operator observes the gate rejecting throws that the hardware would in
+  // fact complete in time. Yaw is PWM-controlled with a custom PID loop, so
+  // there is no clean v_max/accel pair to use directly. 60 deg/s is well
+  // below YawDefaults::MAX_VALID_VEL_RPS (= 2 rev/s = 720 deg/s) and leaves
+  // ample headroom over the typical traverse the operator has observed.
+  constexpr float YAW_TRAVERSE_DEG_PER_S = 60.0f;
+}
+
+// ============================================================================
 // 13. Heartbeat Encoding — sourced from hardware_config.h (BBHb)
 //     Shared resolutions from protocol_config.h (HeartbeatEncoding).
 // ============================================================================

@@ -20,7 +20,59 @@
 #include "HandPathPlanner.h"
 #include "Proprioception.h"
 #include "Trajectory.h"  // For TrajCfg::HAND_MAX_SMOOTH_POS, makeSmoothMove()
+#include <math.h>
 #include <stdarg.h>
+
+// --------------------------------------------------------------------
+// Axis traverse-time estimators (used by executeThrow_'s settle gate)
+// --------------------------------------------------------------------
+namespace {
+
+// Predict how long the pitch axis will take to move |target_deg - current_deg|
+// under ODrive trap-traj (asymmetric accel/decel). Returns microseconds.
+// Returns 0 if the move is zero; returns INFINITY if the trap-traj limits
+// are non-positive (defensive — caller will then reject the throw).
+float estimatePitchTraverseTimeUs(float current_deg, float target_deg,
+                                  const PitchAxis::Traj& traj) {
+  const float v_max = traj.vel_limit_rps;
+  const float a_acc = traj.accel_rps2;
+  const float a_dec = traj.decel_rps2;
+  if (!(v_max > 0.0f && a_acc > 0.0f && a_dec > 0.0f)) {
+    return INFINITY;
+  }
+  const float dtheta_rev = fabsf(target_deg - current_deg) * (1.0f / 360.0f);
+  if (dtheta_rev <= 0.0f) return 0.0f;
+
+  // Triangular peak velocity if v_max were unbounded.
+  const float v_peak = sqrtf(2.0f * dtheta_rev / (1.0f / a_acc + 1.0f / a_dec));
+  float t_s;
+  if (v_peak <= v_max) {
+    // Triangular profile — never reach v_max.
+    t_s = v_peak / a_acc + v_peak / a_dec;
+  } else {
+    // Trapezoidal — cruise at v_max between accel and decel ramps.
+    const float t_acc = v_max / a_acc;
+    const float t_dec = v_max / a_dec;
+    const float d_acc = 0.5f * v_max * v_max / a_acc;
+    const float d_dec = 0.5f * v_max * v_max / a_dec;
+    const float d_cruise = dtheta_rev - d_acc - d_dec;
+    t_s = t_acc + d_cruise / v_max + t_dec;
+  }
+  return t_s * 1e6f;
+}
+
+// Predict yaw traverse time using a conservative constant rate (deg/s).
+// Yaw is PWM-driven through a custom PID loop, not ODrive trap-traj, so there
+// is no clean v_max/accel pair available — see AxisSettleCfg in
+// BallButlerConfig.h for the rate's rationale. Returns microseconds.
+float estimateYawTraverseTimeUs(float current_deg, float target_deg) {
+  const float rate_dps = AxisSettleCfg::YAW_TRAVERSE_DEG_PER_S;
+  if (!(rate_dps > 0.0f)) return INFINITY;
+  const float ddeg = fabsf(target_deg - current_deg);
+  return (ddeg / rate_dps) * 1e6f;
+}
+
+}  // namespace
 
 // --------------------------------------------------------------------
 // State name strings
@@ -863,6 +915,28 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
     return false;
   }
   traj_count_ = plan.frame_count;
+
+  // 4b) Verify yaw + pitch will be settled by the absolute throw time.
+  // The hand check below only accounts for hand wind-up — if pitch or yaw is
+  // still mid-traverse when the hand fires, the ball releases at the wrong
+  // angle. Predict each axis's traverse from its current position to its
+  // commanded target and require lead time >= max(pitch_settle, yaw_settle)
+  // + SCHEDULE_MARGIN.
+  const float pitch_settle_us = estimatePitchTraverseTimeUs(
+      PRO.getPitchDeg(), pitch_deg, pitch_.getTraj());
+  const float yaw_settle_us = estimateYawTraverseTimeUs(
+      PRO.getYawDeg(), yaw_deg);
+  const float axis_required_lead_us =
+      fmaxf(pitch_settle_us, yaw_settle_us) + OpCfg::SCHEDULE_MARGIN_S * 1e6f;
+  const int64_t axis_actual_lead_us = (int64_t)pending_throw_wall_us_ - (int64_t)can_.wallTimeUs();
+  if ((float)axis_actual_lead_us < axis_required_lead_us) {
+    debugf_("[SM] Throw rejected: yaw/pitch settle needs %.0f ms, have %.0f ms (pitch=%.0f ms, yaw=%.0f ms)\n",
+            (double)(axis_required_lead_us / 1000.0f),
+            (double)(axis_actual_lead_us / 1000.0f),
+            (double)(pitch_settle_us / 1000.0f),
+            (double)(yaw_settle_us / 1000.0f));
+    return false;
+  }
 
   // 5) Check lead time — compare absolute throw time against earliest trajectory frame
   float min_ts = 0.0f;
