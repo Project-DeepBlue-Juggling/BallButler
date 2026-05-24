@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# teensy_size — drop-in wrapper for the bundled `teensy_size` binary
+# shipped with PIO's `tool-teensy` package.
+#
+# The bundled binary is linked against GLIBC_2.34+ and aborts on
+# Ubuntu 20.04 / Jetson Linux (glibc 2.31), which kills PIO's
+# `checkprogsize` step and blocks `pio run -t upload` from producing
+# the .hex.
+#
+# This wrapper calls `arm-none-eabi-size -A` (from the bundled
+# toolchain) on the ELF and exits 0. The output format isn't identical
+# to the original — the original prints a pretty per-region usage
+# table; this prints raw section sizes — but the platform's
+# `CheckUploadSize` only checks the exit code, so the build proceeds.
+#
+# `scripts/fix_teensy_size_glibc.py` (a PIO extra_script) prepends the
+# directory containing this wrapper to `env["ENV"]["PATH"]` so the
+# platform finds this wrapper before the broken binary.
+
+set -e
+
+# arm-none-eabi-size is installed by the `toolchain-gccarmnoneeabi-teensy`
+# PIO package. Whichever shell launches us already has the relevant
+# toolchain bin/ on its PATH, but fall back to a known location too.
+if command -v arm-none-eabi-size >/dev/null 2>&1; then
+    exec arm-none-eabi-size -A "$@"
+fi
+
+for guess in \
+    "$HOME/.platformio/packages/toolchain-gccarmnoneeabi-teensy/bin/arm-none-eabi-size" \
+    "/usr/bin/arm-none-eabi-size" \
+    "/usr/local/bin/arm-none-eabi-size"; do
+    if [ -x "$guess" ]; then
+        exec "$guess" -A "$@"
+    fi
+done
+
+echo "teensy_size wrapper: arm-none-eabi-size not found on PATH or bundled toolchain" >&2
+exit 1
