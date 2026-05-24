@@ -13,7 +13,8 @@ files_changed:
   - logbook/README.md
   - logbook/INDEX.md
   - logbook/2026-05-24-bb-axis-settled-gate.md
-commits: []
+commits:
+  - 2f9d72b  # fix(firmware): reject throws before yaw/pitch reach target (axis-settled gate)
 subsystem:
   - firmware
   - state-machine
