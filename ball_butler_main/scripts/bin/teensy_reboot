@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# teensy_reboot — no-op wrapper for the bundled `teensy_reboot` binary
+# shipped with PIO's `tool-teensy` package.
+#
+# Like `teensy_size`, the bundled binary is linked against GLIBC_2.33+
+# and aborts on Ubuntu 20.04 / Jetson Linux:
+#
+#     teensy_reboot: /lib/.../libc.so.6: version `GLIBC_2.33' not found
+#     *** [upload] Error 1
+#
+# `teensy_reboot -s` sends a soft-reboot HID/USB-serial signal to a
+# running Teensy to drop it into bootloader mode. PIO's `teensy-cli`
+# upload protocol invokes it as a separate pre-step before
+# `teensy_loader_cli`, but `teensy_loader_cli -s -w` (the flags set in
+# the platform's UPLOADERFLAGS) already does the soft-reboot itself
+# AND waits for the bootloader to appear. So the separate
+# `teensy_reboot` step is redundant for this upload path.
+#
+# This wrapper exits 0 unconditionally. The subsequent
+# `teensy_loader_cli -s -w` call handles the actual reboot.
+#
+# Made discoverable by `scripts/fix_teensy_size_glibc.py`, which
+# prepends this directory to `env["ENV"]["PATH"]`.
+
+exit 0
