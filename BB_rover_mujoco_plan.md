@@ -39,7 +39,9 @@ The yaw motor is chassis-mounted (sprung mass). A keyed/splined shaft runs throu
 
 ### 1.5 Payload — Ball Butler (Context Only)
 
-Ball Butler is a Stewart-platform-style robot that throws and catches balls. On the rover, it would be mounted atop the chassis in a fixed position. The ball collection mechanism is a mostly-mechanical system that picks up balls from the ground and transfers them into an onboard hopper. The thrower draws from this hopper.
+Ball Butler is a ball-throwing mechanism mounted atop the rover. It is **throw-only** — no version of the robot catches balls; balls are picked up from the ground after they land. The current standalone version (V0) is a fixed-base, 3 DoF machine: unlimited yaw (slip ring), ~90° of pitch (0° horizontal to 90° vertical), and a fast linear axis providing the throwing motion itself. The on-rover variant will evolve from V0; for the purposes of this plan only its mass and approximate footprint matter.
+
+The ball collection mechanism is a mostly-mechanical system that picks balls up off the ground and transfers them into an onboard hopper. The thrower draws from this hopper.
 
 For simulation purposes, the Ball Butler and collection mechanism are modelled as a lumped mass in early phases and as articulated bodies in later phases.
 

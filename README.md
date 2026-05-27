@@ -2,21 +2,37 @@
 
 An autonomous mobile robot that retrieves, stores, and throws balls to humans or other robots. Built around a 4-wheel swerve drive rover with onboard perception and a precision ball-throwing mechanism.
 
-## Current State
+## Ball Butler V0 — Current State
 
-The throwing subsystem is **operational**. It accepts a target state (position and time) and executes a throw to hit that target. This mechanism was originally developed as part of the [Jugglebot](https://github.com/Project-DeepBlue-Juggling/Jugglebot) project and is now the foundation for the full Ball Butler system.
+The V0 thrower is **operational**. It accepts a target state (position and time) and executes a throw to hit that target. The mechanism was originally developed as part of the [Jugglebot](https://github.com/Project-DeepBlue-Juggling/Jugglebot) project and is now the foundation for the full Ball Butler system.
+
+V0 is a deliberately simple, fixed-base machine — it predates the rover and is much less capable than the eventual mobile system described below. The version progression (V0 → V1+) is summarised in the comparison table at the end of this README.
 
 **[CAD Model (Onshape)](https://cad.onshape.com/documents/b9a77ae444a199ae8fa4f0ef/w/58a21fff0c13c6549ee3697c/e/5104799fd810ebb1022a8885)**
+
+### V0 mechanism (3 DoF, fixed-base)
+
+- **Yaw** — unlimited rotation via a slip ring (no rewind required).
+- **Pitch** — ~90° of travel: 0° = horizontal launch, 90° = vertical launch.
+- **Linear axis** — a fast linear actuator provides the throwing motion itself.
+- **Ball hopper** — manually loaded; a mechanical release drops one ball into the thrower each time a bumper is hit, so the thrower can reload itself once the hopper is filled.
 
 ### What works today
 
 - Throwing to arbitrary commanded target states (position, time)
-- Ball hopper with manual reloading (of the hopper - BB can automatically reload itself)
+- Throw range ~2–4 m horizontal; launch height currently capped at ~50 cm by ceiling clearance during indoor testing
+- Bumper-triggered single-ball release from the hopper
 - Integration with Jugglebot as a ball-serving system
 
-## Planned System
+### What V0 does *not* do
 
-The full Ball Butler is a standalone mobile robot comprising:
+- **No mobility** — V0 cannot move itself; it sits on a stand
+- **No ball pickup** — the hopper is reloaded by hand
+- **No catching** — V0 is throw-only. *No version of Ball Butler will catch balls.* The eventual rover-based system picks balls up off the ground after they land; it does not catch mid-air.
+
+## Ball Butler V1+ — Planned System
+
+The full Ball Butler is a standalone mobile robot — a substantial step up from V0 in every respect. V0 is essentially just the throwing subsystem on a stand; V1+ adds mobility, autonomous ball pickup, larger onboard storage, and a perception/navigation stack. V1+ comprises:
 
 - **Rover platform** — 4-wheel swerve drive (8 DoF) for omnidirectional movement over sidewalks, curb cuts, grass, and gravel. Suspended wheels for terrain compliance.
 - **Throwing mechanism** — evolved from the current thrower, mounted atop the rover.
@@ -36,6 +52,20 @@ The full Ball Butler is a standalone mobile robot comprising:
 | Steering motors | BLDC with belt reduction (x4) |
 | Motor controllers | moteus r4.11 (drive), moteus c1 (steering) |
 | Compute | Jetson Orin Nano/NX |
+
+## V0 vs V1+ at a Glance
+
+| | **V0 (current, operational)** | **V1+ (planned)** |
+|---|---|---|
+| Throwing mechanism | 3 DoF (yaw / pitch / linear) | Evolved thrower atop rover (TBD architecture) |
+| Yaw range | Unlimited (slip ring) | TBD |
+| Pitch range | ~0–90° (horizontal → vertical) | TBD |
+| Throw range | ~2–4 m horizontal | TBD |
+| Catching | No | No (intentionally — no version will catch) |
+| Mobility | None — fixed stand | 4-wheel swerve drive over outdoor terrain |
+| Ball pickup | Manual (hand-loaded hopper) | Autonomous ground pickup |
+| Hopper capacity | Small, bumper-triggered single-ball release | 5–10 balls |
+| Perception / nav | None | LiDAR / depth cameras, teleop with autonomy |
 
 ## Development Approach
 
