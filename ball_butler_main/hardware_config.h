@@ -35,6 +35,9 @@ namespace Dynamics {
   constexpr float PLATFORM_INERTIA_TENSOR_KGMM2_IYZ = 979.411f;
   constexpr float PLATFORM_INERTIA_TENSOR_KGMM2_IZZ = 9298.383f;
   constexpr float MOTOR_ROTOR_INERTIA_KGM2 = 0.000275f;
+  constexpr float MOTOR_KT_NM_PER_A = 0.0624f;
+  constexpr uint32_t MOTOR_POLE_PAIRS = 7u;
+  constexpr uint32_t MOTOR_STATOR_SLOTS = 12u;
 }
 
 // ==========================================================================
@@ -54,7 +57,7 @@ namespace Geometry {
   constexpr float HAND_STROKE_MM = 355.0f;
   constexpr float HAND_RADIUS_MM = 35.0f;
   constexpr float HAND_AXIS_BOTTOM_OFFSET_MM = -129.0f;
-  constexpr float BALL_JOINT_OFFSET_MM = 25.5f;
+  constexpr float BALL_JOINT_OFFSET_MM = 0.0f;
   constexpr float BASE_NODES_MM[6][3] = {
     {-385.274f, -140.228f, 0.0f},
     {-314.078f, -263.543f, 0.0f},
@@ -71,7 +74,7 @@ namespace Geometry {
     {180.975f, 123.458f, 0.0f},
     {-180.975f, 123.458f, 0.0f},
   };
-  constexpr float INIT_LEG_LENGTHS_MM[6] = {621.389f, 618.16f, 622.074f, 620.653f, 620.652f, 620.091f};
+  constexpr float INIT_LEG_LENGTHS_MM[6] = {648.419f, 648.419f, 648.419f, 648.419f, 648.419f, 648.419f};
   constexpr float MM_TO_REV[6] = {0.01418332f, 0.01419076f, 0.01408956f, 0.01418684f, 0.01426801f, 0.01424951f};
   constexpr float LEG_MOTOR_MAX_POSITION_REVS = 4.2f;
   constexpr float HAND_MOTOR_MAX_POSITION_REVS = 11.1f;
@@ -125,6 +128,10 @@ namespace ODriveDefaults {
   constexpr float HAND_POS_GAIN = 35.0f;
   constexpr float HAND_VEL_GAIN = 0.007f;
   constexpr float HAND_VEL_INT_GAIN = 0.07f;
+  constexpr float LEG_POS_GAINS[6] = {40.0f, 40.0f, 40.0f, 40.0f, 40.0f, 40.0f};
+  constexpr float LEG_VEL_GAINS[6] = {0.2f, 0.2f, 0.2f, 0.2f, 0.2f, 0.2f};
+  constexpr float LEG_VEL_INT_GAINS[6] = {0.32f, 0.32f, 0.32f, 0.32f, 0.32f, 0.32f};
+  constexpr uint32_t LEG_MOTOR_ENC_CPR = 8192u;
 }
 
 // ==========================================================================
@@ -143,8 +150,7 @@ namespace JBOp {
   constexpr float MAX_VALID_TILT_RAD = 0.785f;
   constexpr float INCLINOMETER_OFFSET_DEG[2] = {-0.6f, -0.2f};
   constexpr float LEVELLING_SETTLE_S = 0.5f;
-  constexpr float MAX_POSITION_STEP_REV = 0.2f;
-  constexpr uint32_t FEASIBILITY_WORKER_MAX_RESTARTS = 3u;
+  constexpr float MAX_POSITION_STEP_REV = 0.3f;
 }
 
 // ==========================================================================
@@ -156,17 +162,6 @@ namespace Spacemouse {
   constexpr float Z_MULT_MM = 140.0f;
   constexpr float PITCH_ROLL_MULT_DEG = 30.0f;
   constexpr float YAW_MULT_DEG = 10.0f;
-  constexpr float SMOOTHER_VEL_LIMIT_RPS = 5.0f;
-  constexpr float SMOOTHER_ACCEL_LIMIT_RPS2 = 6.0f;
-}
-
-// ==========================================================================
-// Jugglebot GUI
-// ==========================================================================
-
-namespace GUI {
-  constexpr float SMOOTHER_VEL_LIMIT_RPS = 5.0f;
-  constexpr float SMOOTHER_ACCEL_LIMIT_RPS2 = 6.0f;
 }
 
 // ==========================================================================
@@ -437,4 +432,19 @@ namespace BBBallDetect {
   constexpr uint32_t CHECK_INTERVAL_MS = 50u;
   constexpr uint32_t MAX_MISSING_SAMPLES = 5u;
   constexpr uint32_t CHECK_TIMEOUT_MS = 100u;
+}
+
+// ==========================================================================
+// Catching Cone
+// ==========================================================================
+
+namespace CatchingCone {
+  constexpr uint32_t PIEZO_PIN = 2u;
+  constexpr uint32_t DEAD_TIME_US = 500000u;
+  constexpr uint32_t REPORT_DELAY_US = 30000u;
+  constexpr uint32_t HEARTBEAT_PERIOD_MS = 100u;
+  constexpr float DELTA_OK_MS = 5.0f;
+  constexpr float DELTA_WARN_MS = 15.0f;
+  constexpr float OFFSET_DISPLAY_LIMIT_MS = 50.0f;
+  constexpr uint32_t OFFSET_HISTORY_LEN = 12u;
 }
