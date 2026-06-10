@@ -89,7 +89,7 @@ def _normalize_qtm_label(label: str) -> str:
     text = label.strip()
     if text.startswith("New "):
         try:
-            return f"b{int(text.removeprefix('New '))}"
+            return f"b{int(text[len('New '):])}"
         except ValueError:
             return text
     return text
