@@ -210,6 +210,9 @@ public:
   // ============================================================================
 
   bool getAxisPV(uint32_t node_id, float& pos_rev_out, float& vel_rps_out, uint64_t& wall_us_out) const;
+  // Monotonic age (us) since the last encoder estimate — sync-immune freshness.
+  // Returns UINT64_MAX if the axis has no valid PV yet.
+  uint64_t axisPVMonoAgeUs(uint32_t node_id) const;
   bool getAxisIq(uint32_t node_id, float& iq_meas_out, float& iq_setpoint_out, uint64_t& wall_us_out) const;
   bool getAxisHeartbeat(uint32_t node_id, AxisHeartbeat& out) const;
   bool hasAxisError(uint32_t node_id, uint32_t mask) const;
@@ -297,10 +300,11 @@ private:
   // Internal Types
   // ============================================================================
 
-  struct AxisStatePV { 
+  struct AxisStatePV {
     volatile float pos_rev = 0.f;
     volatile float vel_rps = 0.f;
-    volatile uint64_t wall_us = 0;
+    volatile uint64_t wall_us = 0;   // wall clock at decode (sync-adjusted; for absolute refs)
+    volatile uint64_t mono_us = 0;   // MONOTONIC clock at decode (for freshness — sync-immune)
     volatile bool valid = false;
   };
 

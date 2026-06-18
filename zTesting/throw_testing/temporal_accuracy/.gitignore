@@ -1,0 +1,6 @@
+# Transient test data + per-run analysis outputs. Raw session JSONs and analysis
+# result dumps may be moved/deleted between runs; the key numbers are copied into
+# the logbook entries (see logbook/2026-06-18-temporal-accuracy-resolved-*.md).
+sessions/
+*_results.json
+*_obs.json

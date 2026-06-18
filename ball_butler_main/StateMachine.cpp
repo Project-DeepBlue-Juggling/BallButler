@@ -796,9 +796,10 @@ bool StateMachine::requestSmoothMove(float target_rev) {
     return false;
   }
 
-  // Check PV freshness
-  if (can_.wallTimeUs() - t_us > SMDefaults::PV_FRESHNESS_US) {
-    debugf_("[SM] smoothMove: PV stale\n");
+  // Freshness via the MONOTONIC clock (sync-immune; see executeThrow_).
+  if (can_.axisPVMonoAgeUs(config_.hand_node_id) > SMDefaults::PV_FRESHNESS_US) {
+    debugf_("[SM] smoothMove: PV stale (mono_age=%lu us, synced=%d)\n",
+            (unsigned long)can_.axisPVMonoAgeUs(config_.hand_node_id), (int)can_.hasTimeSync());
     return false;
   }
 
@@ -848,9 +849,15 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
     return false;
   }
 
-  // Check PV freshness
-  if (can_.wallTimeUs() - t_wall_us > SMDefaults::PV_FRESHNESS_US) {
-    debugf_("[SM] Throw rejected: PV stale\n");
+  // Freshness via the MONOTONIC clock (sync-immune). A liveness check must not use
+  // the wall clock — a time-sync adjustment (the first 0x7DD steps it to epoch, and
+  // re-acquisition can slew it) corrupts wall-clock age and falsely reads "stale".
+  // The wall-clock age is logged alongside for diagnostics.
+  const uint64_t mono_age_us = can_.axisPVMonoAgeUs(config_.hand_node_id);
+  if (mono_age_us > SMDefaults::PV_FRESHNESS_US) {
+    const uint64_t wall_age_us = can_.wallTimeUs() - t_wall_us;
+    debugf_("[SM] Throw rejected: PV stale (mono_age=%lu us, wall_age=%lu us, synced=%d)\n",
+            (unsigned long)mono_age_us, (unsigned long)wall_age_us, (int)can_.hasTimeSync());
     return false;
   }
 

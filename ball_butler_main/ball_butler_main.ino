@@ -90,7 +90,9 @@ void setup() {
 
   canif.begin(CanCfg::BAUD_RATE);
   canif.setDebugStream(&Serial);
-  canif.setDebugFlags(true, false); // timesync | CAN interface
+  canif.setDebugFlags(false, false); // timesync | CAN interface — both default OFF.
+                                     // To enable the TimeSync stats log, set the first arg true
+                                     // (recompile); it then prints at <=0.5 Hz (sync_stats_print_ms).
   canif.setHandAxisNode(NodeId::BB_HAND);
   canif.setPitchAxisNode(NodeId::BB_PITCH);
   canif.setAutoClearBrakeResistor(true, CanCfg::AUTO_CLEAR_BRAKE_MS);
@@ -222,9 +224,31 @@ void printStatus() {
   PRO.snapshot(d);
   Serial.printf("Yaw: %.1f  Pitch: %.1f  Hand: %.3f rev\n",
                 d.yaw_deg, d.pitch_deg, d.hand_pos_rev);
-  Serial.printf("Hand homed: %s  Streamer: %s\n",
+  Serial.printf("Hand homed: %s  Streamer: %s  TimeSync: %s\n",
                 canif.isAxisHomed(NodeId::BB_HAND) ? "YES" : "NO",
-                streamer.isActive() ? "ACTIVE" : "idle");
+                streamer.isActive() ? "ACTIVE" : "idle",
+                canif.hasTimeSync() ? "YES" : "NO");
+  // Per-axis PV freshness + ODrive state — diagnose 'PV stale' throw rejects.
+  // state: 1=IDLE, 8=CLOSED_LOOP. PV age is ms since the last encoder estimate;
+  // it must be < 20 ms (PV_FRESHNESS_US) at throw time or the throw is rejected.
+  // If hand PV age is large while pitch is small, the hand ODrive's cyclic
+  // encoder broadcast isn't reaching the Teensy (check its CAN msg-rate config).
+  const uint64_t now_us = canif.wallTimeUs();
+  const uint8_t diag_nodes[2] = { NodeId::BB_PITCH, NodeId::BB_HAND };
+  const char* diag_names[2]   = { "pitch", "hand " };
+  for (int i = 0; i < 2; ++i) {
+    float dp = 0, dv = 0; uint64_t tw = 0;
+    const bool pv_ok = canif.getAxisPV(diag_nodes[i], dp, dv, tw);
+    CanInterface::AxisHeartbeat hb;
+    const bool hb_ok = canif.getAxisHeartbeat(diag_nodes[i], hb);
+    const long wall_age_ms = pv_ok ? (long)(((int64_t)now_us - (int64_t)tw) / 1000) : -1;
+    const uint64_t mono_age = canif.axisPVMonoAgeUs(diag_nodes[i]);
+    const long mono_age_ms = (mono_age == UINT64_MAX) ? -1 : (long)(mono_age / 1000);
+    Serial.printf("  %s (node %u): PV=%s mono_age=%ld ms wall_age=%ld ms  state=%u  pos=%.3f vel=%.3f\n",
+                  diag_names[i], (unsigned)diag_nodes[i],
+                  pv_ok ? "ok" : "INVALID", mono_age_ms, wall_age_ms,
+                  hb_ok ? (unsigned)hb.axis_state : 99u, (double)dp, (double)dv);
+  }
 }
 
 bool handleThrowCmd(const char* line) {

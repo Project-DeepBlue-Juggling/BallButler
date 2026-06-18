@@ -83,6 +83,11 @@ struct Trajectory {
 };
 
 /* ───────── helper functions ───────── */
+// Hand-only torque feedforward. NOTE (2026-06-18): empirically OPTIMAL for release
+// timing — sweeping the accel-phase inertia (0, I_hand, I_hand/INERTIA_RATIO) gave
+// release lags of 65.8, 43.7, 56.3 ms — a minimum at hand-only. Adding the ball's
+// inertia (physically "more correct") OVER-drives the loop and worsens the lag. The
+// residual ~44 ms is a constant actuator latency, not a feedforward error.
 inline float accelToTorque(float a) { return a * TrajCfg::INERTIA_HAND_ONLY * TrajCfg::HAND_SPOOL_R; }
 
 /* ───────── helper to shift whole trajectory in time ───────── */

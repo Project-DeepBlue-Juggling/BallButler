@@ -67,9 +67,14 @@ HandPlanResult HandPathPlanner::planThrow(float throw_vel_mps,
     return out;
   }
 
-  // Cache decel start time for planThrowDecelZero() to avoid recomputing
+  // Cache decel start time for planThrowDecelZero() to avoid recomputing.
+  // Measured relative to the throw's FIRST sample. makeThrow() applies
+  // shiftTime(-t2), so the decel sample lands at t≈0 and the first sample at
+  // t≈-t2; the raw throwTr.t[i_decel] is therefore ≈0 and would cancel the
+  // decel-zero shift, releasing the ball ~t2 (≈80 ms) late (logbook
+  // 2026-06-11). Subtracting t[0] recovers the true decel offset (= t2).
   const size_t i_decel = findDecelStartIndex(throwTr);
-  last_decel_time_in_throw_ = throwTr.t[i_decel];
+  last_decel_time_in_throw_ = throwTr.t[i_decel] - throwTr.t[0];
 
   // 2) Choose anchor within bounds, minimizing pre-position distance
   const auto [anchor_rev, target_start_rev] = computeAnchor_(throwTr);
@@ -285,7 +290,11 @@ float HandPathPlanner::planThrowDecelZero(float throw_vel_mps,
   const float t_smooth = trajDuration(smoothTr);
   const float t_pause  = pause_s_;
   const size_t i_decel = findDecelStartIndex(throwTr);
-  const float t_decel_in_throw = throwTr.t[i_decel];
+  // Decel offset relative to the throw's first sample (= t2). Raw
+  // throwTr.t[i_decel] is ≈0 because makeThrow() shifts decel to t=0; using it
+  // cancels the decel-zero shift and releases the ball ~t2 late (logbook
+  // 2026-06-11). Subtract t[0] for the true offset.
+  const float t_decel_in_throw = throwTr.t[i_decel] - throwTr.t[0];
   const float t_zero_global = t_smooth + t_pause + t_decel_in_throw;
 
   // Emit with a time shift so decel occurs at t=0

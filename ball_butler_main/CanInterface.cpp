@@ -384,6 +384,13 @@ bool CanInterface::getAxisPV(uint32_t node_id, float& pos_out, float& vel_out, u
   return true;
 }
 
+uint64_t CanInterface::axisPVMonoAgeUs(uint32_t node_id) const {
+  if (node_id >= MAX_NODES || !axes_pv_[node_id].valid) return UINT64_MAX;
+  const uint64_t m = axes_pv_[node_id].mono_us;
+  const uint64_t now = micros64();
+  return (now >= m) ? (now - m) : 0;   // monotonic: never underflows
+}
+
 bool CanInterface::getAxisIq(uint32_t node_id, float& iq_meas_out, float& iq_setp_out, uint64_t& wall_us_out) const {
   if (node_id >= MAX_NODES) return false;
   uint64_t t1, t2;
@@ -953,6 +960,7 @@ void CanInterface::handleRx_(const CAN_message_t& msg) {
     axes_pv_[node].pos_rev = pos;
     axes_pv_[node].vel_rps = vel;
     axes_pv_[node].wall_us = wallTimeUs();
+    axes_pv_[node].mono_us = micros64();   // monotonic stamp for sync-immune freshness
     axes_pv_[node].valid = true;
 
     Proprioception& prop = PRO;
