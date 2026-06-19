@@ -381,14 +381,34 @@
           extrapolating velocity to an announced release point that sits <strong>~335&nbsp;mm below</strong> the true
           launch height.</li>
         <li>2026-06-18's <strong>"execution as-commanded"</strong> is also incomplete — the <em>hand</em> reaches
-          commanded velocity, yet the <em>ball</em> leaves ~7% slower (a hand→ball transfer gap the hand encoder can't
-          see).</li>
+          ~98% of commanded velocity, but the <em>ball</em> leaves at ~92% (a launch-side speed gap the hand-encoder
+          argument didn't fully capture).</li>
       </ul>
-      <p>This doesn't change the deployed fix — <code>aim_correction</code> empirically absorbs the spatial consequence
-        of a uniform speed scale, and the temporal offset is untouched — but it corrects the record on <em>what the
-        residual execution error actually is</em>, and points at a single launch-speed calibration as the lever if the
-        error is ever fixed at the root. <span class="when">This re-analysis is new (2026-06-19); the 06-17 and 06-18
-        entries still carry the superseded reading and need a withdrawn-claim note.</span></p>
+
+      <p>So where does the missing speed go? One 06-18 distance-sweep bag (<code>16-36-14</code>) recorded the hand
+        encoder, the mocap ball, <em>and</em> the command together, so the deficit can be localised along the chain
+        <strong>commanded → hand → ball</strong> on the same 51 throws (Figure&nbsp;5):</p>
+
+      <figure>
+        <img src="images/speed-chain.png" alt="Left: a descending bar chart — commanded 100%, hand peak 97.7% (servo under-track 2.3%), ball launch 92.3% (hand-to-ball gap 5.5%). Right: per-throw scatter of hand/commanded clustered at 0.977 and ball/commanded at 0.923, both below the commanded 1.0 line.">
+        <figcaption><b>Figure 5 · Localising the ~8% deficit: commanded → hand → ball.</b> On the same 51 throws, the
+          hand servo reaches <strong>97.7%</strong> of its commanded velocity (a ~2.3% under-track on the bang-bang
+          profile — an <em>R-independent</em> rev/s ratio), and the ball then leaves at <strong>94.5% of the hand's
+          peak linear speed</strong> — a lumped <strong>~5.5% hand→ball term</strong> (uncalibrated effective spool
+          radius and/or release transfer; not separable from this data). Net ≈ 92% of commanded, entirely on the launch
+          side. Tool: <code>plot_speed_chain.py</code>.</figcaption>
+      </figure>
+
+      <p><strong>Verdict on the open question:</strong> the deficit is <em>mostly</em> a hand→ball gap (~5.5%) with a
+        minor servo shortfall (~2.3%) — not upstream of the hand, and nothing to do with the ball's flight or angle
+        (the encoder's barrel angle reads commanded to within 0.03°, and mocap agrees). The obvious lever is
+        <code>BBTraj::LINEAR_GAIN_FACTOR</code>, still <strong>1.0 (never calibrated)</strong> while the Jugglebot
+        platform hand carries 1.035; calibrating it (≈1.08) — or the spool radius — would close most of it at the root.</p>
+
+      <p>None of this changes the deployed fix: <code>aim_correction</code> empirically absorbs the spatial consequence
+        of a uniform speed scale, and the temporal offset is untouched. But it corrects the record on <em>what the
+        residual execution error actually is</em>. <span class="when">This re-analysis is new (2026-06-19); the 06-17
+        and 06-18 entries still carry the superseded reading and need a withdrawn-claim note.</span></p>
 
       <p>Two larger root-cause routes were also pursued and <strong>abandoned on purpose</strong>, documented so they
         aren't re-run: a <em>kinematic system-ID</em> (fit the physical geometry + per-axis calibration from mocap
@@ -496,7 +516,7 @@
           <tr>
             <td><a href="../2026-06-18-temporal-accuracy-resolved-fractured-solution.md">06-18</a></td>
             <td>Temporal accuracy resolved (fractured solution)</td>
-            <td>The 44 ms offset; kinematic-ID &amp; feedforward ruled out. ("+3°/hot" called an artifact — refined for this chapter to a uniform ~7% speed deficit, Figure 4.) <span class="pill">resolved</span></td>
+            <td>The 44 ms offset; kinematic-ID &amp; feedforward ruled out. ("+3°/hot" called an artifact — refined for this chapter to a ~8% launch-speed deficit, localised hand→ball; Figures 4–5.) <span class="pill">resolved</span></td>
           </tr>
           <tr>
             <td><a href="../2026-06-17-release-lag-fix-validated-launch-discrepancy.md">06-17</a></td>
