@@ -405,10 +405,33 @@
         <code>BBTraj::LINEAR_GAIN_FACTOR</code>, still <strong>1.0 (never calibrated)</strong> while the Jugglebot
         platform hand carries 1.035; calibrating it (≈1.08) — or the spool radius — would close most of it at the root.</p>
 
-      <p>None of this changes the deployed fix: <code>aim_correction</code> empirically absorbs the spatial consequence
-        of a uniform speed scale, and the temporal offset is untouched. But it corrects the record on <em>what the
-        residual execution error actually is</em>. <span class="when">This re-analysis is new (2026-06-19); the 06-17
-        and 06-18 entries still carry the superseded reading and need a withdrawn-claim note.</span></p>
+      <p><strong>Was the machine different at 06-17?</strong> No — and this settles the natural suspicion that the
+        launch was genuinely <em>hot</em> back then and has since flipped. The 06-17 evening data (Figure&nbsp;6) shows
+        the hand reaching <strong>97.6%</strong> of commanded — identical to 06-18 — and the ball, evaluated <em>at the
+        actual release</em>, launching slow, just as it does now. The "+hot" reading was real <em>as computed at the
+        time</em>: velocity was evaluated at the commanded <code>throw_time</code>, 44&nbsp;ms before the ball
+        physically left, when gravity had not yet decelerated it. Removing that 44&nbsp;ms flips the very same throws
+        from "+4% hot" to "−11% slow." <strong>The effect never reversed — the analysis did.</strong></p>
+
+      <figure>
+        <img src="images/speed-chain-0617.png" alt="Left: the 06-17 speed chain — commanded 100%, hand peak 97.6%, ball launch 88.8% — the same descending shape as 06-18. Right: the same 60 throws' ball speed relative to commanded, evaluated at throw_time (1.044, hot, above the line) versus at the actual release (0.888, slow, below the line), with an arrow showing that removing the 44 ms flips hot to slow.">
+        <figcaption><b>Figure 6 · 2026-06-17 era — same chain, and why it once read "hot".</b> Left: the 06-17 speed
+          chain (commanded → hand → ball) has the same shape as 06-18 — the hand reaches 97.6% of commanded (vs 06-18's
+          97.7%) and the ball launches slow. (The ball % here is from the noisier kinematic-grid data; the fixed-config
+          06-17 bags behind Figure&nbsp;4 read ~93%.) Right: the same 60 throws with the ball speed evaluated two ways —
+          at the commanded <code>throw_time</code> (the 06-17 method) it reads <strong>+4% hot</strong>; at the actual
+          release 44&nbsp;ms later it reads <strong>−11% slow</strong>. Only the evaluation instant differs. Tool:
+          <code>plot_0617_chain.py</code>.</figcaption>
+      </figure>
+
+      <p><strong>Bottom line — and why it isn't urgent.</strong> This launch-speed deficit is real, but it has already
+        been <em>compensated end-to-end</em>: <code>aim_correction</code> absorbs its spatial consequence (the ball
+        lands in the right place) and the measured release-latency offset handles the timing, so BB throws accurately
+        as-is. A root fix (a <code>LINEAR_GAIN_FACTOR</code> / spool-radius calibration) would shift every landing and
+        force a spatial re-fit, so it is deliberately deferred — likely for a long while. It is recorded here as a
+        known, characterized, compensated execution error precisely so it is <em>not forgotten</em>.
+        <span class="when">This re-analysis is new (2026-06-19); the 06-17 and 06-18 entries still carry the superseded
+        reading and need a withdrawn-claim note.</span></p>
 
       <p>Two larger root-cause routes were also pursued and <strong>abandoned on purpose</strong>, documented so they
         aren't re-run: a <em>kinematic system-ID</em> (fit the physical geometry + per-axis calibration from mocap
@@ -468,6 +491,18 @@
           (CAN command pipeline vs ODrive command-processing vs estimator). If we ever want it <em>gone</em> rather than
           cancelled, that's the dig.</p>
         <p class="where">2026-06-18 (#4)</p>
+      </div>
+
+      <div class="prob">
+        <h4>Launch-speed deficit (~8%) — compensated, not fixed at root</h4>
+        <span class="badge b-low">Low</span>
+        <p class="body">The ball leaves at ~92% of commanded speed at the correct angle (servo ~2.3% + hand→ball ~5.5%;
+          Figures 4–6). It is fully absorbed by <code>aim_correction</code> (spatially) and the 44 ms offset
+          (temporally), so BB throws accurately as-is — hence low urgency. But it's a real, uncalibrated execution error
+          (<code>BBTraj::LINEAR_GAIN_FACTOR = 1.0</code>, never calibrated, vs the platform hand's 1.035). A root fix
+          (≈1.08, or a spool-radius / release-velocity calibration) would improve workspace/height generalisation but
+          forces a spatial re-fit. <strong>Deferred, not forgotten.</strong></p>
+        <p class="where">New 2026-06-19 · refines 2026-06-17 &amp; 2026-06-18</p>
       </div>
 
       <div class="prob">
