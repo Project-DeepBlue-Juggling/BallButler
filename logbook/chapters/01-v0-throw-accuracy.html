@@ -355,35 +355,30 @@
 
       <h3>Did it really launch hot? A trajectory re-test</h3>
       <p>The "+3° steeper / +10% hot" claim was never actually visualised at the time, so for this chapter the two clean
-        post-fix sessions (2026-06-17, 52 throws total) were re-analysed from the raw mocap with one rule: lean only on
-        quantities that <em>cannot</em> be faked by the 44&nbsp;ms release latency or by the wrong model release height —
-        the <strong>horizontal launch speed</strong> (a constant slope; a time offset can't change it) and the
-        <strong>apex height</strong> (a late release shifts the arc in time, not in height).</p>
+        post-fix sessions (2026-06-17, 52 throws total) were re-analysed from the raw mocap. The re-test rests on two
+        facts that need no assumption about <em>when</em> or <em>where</em> the ball was released: (1) the arc's
+        <strong>curvature</strong> fixes the <strong>horizontal launch speed</strong> at <code>vh = 0.93 ×
+        commanded</code> — a narrower arc than commanded, i.e. slower horizontally; and (2) the <strong>hand
+        encoder</strong> (Figures 5–6 below).</p>
 
       <figure>
         <img src="images/hot-launch-test.png" alt="Left: one throw's measured mocap parabola against the commanded-launch prediction — same angle but the measured arc falls short and lower. Right: horizontal and vertical launch-speed ratios across 52 throws, both clustered at about 0.93 of commanded, below the 1.0 commanded line.">
-        <figcaption><b>Figure 4 · Predicted vs measured launch — it is not hot.</b> Left: a representative throw —
-          measured mocap ball (blue) against the commanded-launch parabola (orange dashed), both launched from the same
-          point. Same angle, but the measured arc <strong>falls short and peaks lower</strong> → slower, not steeper.
-          Right: across all 52 post-fix throws, horizontal speed (<i>vh</i>, latency-free) and vertical speed
-          (<i>vz</i>, from apex height) both sit at <strong>≈0.93× commanded</strong> — a uniform ~7% speed deficit,
-          well below the "hot would be&nbsp;&gt;&nbsp;1" line. <code>g_eff</code> matches true gravity to &lt;0.1%, so
-          drag is negligible and the apex is a clean <code>vz</code>.</figcaption>
+        <figcaption><b>Figure 4 · The mocap view — the arc is narrower than commanded.</b> Left: a representative throw —
+          measured mocap ball (blue) against the commanded-launch parabola (orange dashed). The measured arc is more
+          tightly curved and <strong>falls short of commanded</strong> → slower. Right: the anchor-free leg is the
+          <strong>horizontal speed (<i>vh</i>) ≈ 0.93× commanded</strong> across all 52 throws (the vertical ratio
+          <i>vz</i> is shown for completeness, but it assumes the encoder-timed release, so it is not an independent
+          proof). The verdict that the launch is <em>not hot</em> comes from the encoder (Figures 5–6), not the mocap arc
+          alone.</figcaption>
       </figure>
 
-      <p>The verdict (tool: <code>zTesting/throw_testing/temporal_accuracy/plot_launch_geometry.py</code>): the measured
-        arc has the <strong>same launch angle</strong> as commanded (71.1° vs 71.0°) but a <em>lower</em> apex
-        (≈428 vs 491&nbsp;mm) and shorter range, because <code>vh</code> and <code>vz</code> are <strong>both ≈0.93×
-        commanded</strong>. A genuinely hot/steeper launch would peak <em>higher</em>; this one peaks lower. So both
-        prior readings were off:</p>
-      <ul>
-        <li>2026-06-17's <strong>"+3° steeper / +10% hot"</strong> is refuted — the inflated <code>vz</code> came from
-          extrapolating velocity to an announced release point that sits <strong>~335&nbsp;mm below</strong> the true
-          launch height.</li>
-        <li>2026-06-18's <strong>"execution as-commanded"</strong> is also incomplete — the <em>hand</em> reaches
-          ~98% of commanded velocity, but the <em>ball</em> leaves at ~92% (a launch-side speed gap the hand-encoder
-          argument didn't fully capture).</li>
-      </ul>
+      <p>The verdict: <code>vh = 0.93 × commanded</code> (the narrower arc, anchor-free) says the ball is slower
+        horizontally, and the <strong>hand encoder</strong> settles the rest — the hand reaches only <strong>97.7%</strong>
+        of commanded speed (a ball cannot leave faster than the hand throwing it, so it <strong>cannot be hot</strong>)
+        and the barrel angle reads commanded (<strong>not steeper</strong>). So the ball launches <strong>~7% slow, at
+        the commanded angle</strong> — not the "+3° steeper / +10% hot" reported on 2026-06-17 (that came from reading
+        <code>vz</code> 44&nbsp;ms before the ball actually left, which inflates it), and not quite "execution
+        as-commanded" as 2026-06-18 had it (the hand hits commanded velocity, but the ball leaves ~7% slower).</p>
 
       <p>So where does the missing speed go? One 06-18 distance-sweep bag (<code>16-36-14</code>) recorded the hand
         encoder, the mocap ball, <em>and</em> the command together, so the deficit can be localised along the chain
@@ -454,9 +449,9 @@
 
       <div class="insight"><span class="tag">2 · Verify the measurement before theorising the mechanism</span>
         <p>Several "physical effects" here turned out to be measurement-limited readings: the warm-up "drift" (a bridge
-          clock slew), the "+3° hot launch" (velocity extrapolated to a wrong release height — re-tested in Figure&nbsp;4),
-          and a phantom "+115&nbsp;ms cone transit" (a KF track silently coasting off-gate). The recurring fix was an
-          <strong>independent clock or sensor</strong>, and an assumption-light quantity (apex height, horizontal speed).</p></div>
+          clock slew), the "+3° hot launch" (launch velocity read at the wrong release instant, 44&nbsp;ms early —
+          re-tested in Figures&nbsp;4–6), and a phantom "+115&nbsp;ms cone transit" (a KF track silently coasting
+          off-gate). The recurring fix was an <strong>independent clock or sensor</strong> — here, the hand encoder.</p></div>
 
       <div class="insight"><span class="tag">3 · Record the dead ends</span>
         <p>The non-monotonic feedforward sweep and the unstable kinematic-ID are written down with their numbers

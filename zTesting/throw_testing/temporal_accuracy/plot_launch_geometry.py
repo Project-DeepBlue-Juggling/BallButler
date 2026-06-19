@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Predicted (commanded) vs measured (mocap) launch geometry — the assumption-light
-test of the "+3 deg steeper / +10% hot launch" question (chapter 1, comment #3).
+"""Predicted (commanded) vs measured (mocap) launch geometry — the mocap-side check of
+the "+3 deg steeper / +10% hot launch" question (chapter 1, comment #3).
 
-The 2026-06-17 reading ("+3 deg / hot") came from velocity *extrapolated to a model
-release plane*, which is sensitive to the ~44 ms release latency and to release-height
-error. This script instead leans on quantities that are INDEPENDENT of clock/latency
-and of the release-height anchor:
+The 2026-06-17 reading ("+3 deg / hot") came from evaluating the launch velocity AT the
+commanded throw_time — ~44 ms BEFORE the ball actually releases — which inflates vz (gravity
+has not yet acted). Only ONE mocap quantity is genuinely anchor-free:
 
-  * vh  = horizontal launch speed = slope of (x,y) vs t. Constant in vacuum, so a time
-          offset cannot change it. vh/cmd < 1  with  |v| ~ commanded (hand encoder)
-          => the launch vector is tilted steeper than commanded.
-  * apex height (absolute mocap z) = peak of the measured parabola. A late release
-          shifts the whole arc in TIME but not in HEIGHT, so a higher-than-commanded
-          apex is a real vz, not a timing artifact.
+  * vh = horizontal launch speed = slope of (x,y) vs t. The arc's curvature g/(2 vh^2) is
+         fixed by the data; no release-time/position assumption can change it. Here
+         vh ~ 0.93 x commanded  =>  narrower arc  =>  slower horizontally.
+
+Everything VERTICAL (vz, apex-above-launch, the launch ANGLE) depends on WHERE on the arc the
+release sits, i.e. on the assumed release instant (REL_LAT). So vz_ratio below is labelled
+"@44ms" and is NOT an independent hot/slow proof. The hot-vs-slow question (= the launch angle)
+is settled by the HAND ENCODER, not this script: the hand peaks at ~0.977 x commanded (a ball
+cannot leave faster than the hand => not hot) and the barrel angle reads commanded (=> not
+steeper). See plot_speed_chain.py and plot_0617_chain.py.
 
 For each throw it fits the clean early-mid arc (track 'ball_butler', window [tt+0.10,
 tt+0.60]) with the physical shape imposed (constant horizontal velocity; known-g
