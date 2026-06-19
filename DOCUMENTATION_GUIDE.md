@@ -41,6 +41,7 @@ Consequence: a single piece of work often spans both repos. The rule:
 | 1 | **Public README** | [README.md](README.md) | Project identity: what Ball Butler is, V0 state, V1+ plan. Public-facing. |
 | 2 | **This guide** | [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md) | How docs are organised (you are here). |
 | 3 | **Engineering logbook** | [logbook/](logbook/) | Per-change record: *why* a change looks the way it does, and whether it worked. |
+| 3b | **Logbook chapters** | [logbook/chapters/](logbook/chapters/) | Narrative synthesis of a related block of entries (story + insights + open problems). Non-authoritative — links down to the entries. |
 | 4 | **Architecture Decision Records** | [docs/adr/](docs/adr/) | Single significant, hard-to-reverse decisions. |
 | 5 | **Inline source docs** | `*.cpp`, `*.py`, `*.h`, … | Docstrings / `why` comments next to the code. |
 
@@ -71,6 +72,21 @@ Essentials:
 - Maintained by hand — update [INDEX.md](logbook/INDEX.md) when you add or
   re-status an entry.
 
+#### Chapters (`logbook/chapters/`) — narrative synthesis
+
+A **chapter** reads a related block of entries top-to-bottom: the development,
+the significant developments/insights, and the open problems — the high-level
+picture the per-entry record and the flat [INDEX.md](logbook/INDEX.md) table
+don't give. Self-contained HTML (sidebar nav, plots, links), browsable offline.
+
+A chapter is a **reading lens, not a source of record.** It must not introduce
+authoritative facts; every headline number links down to the entry that owns it
+(this keeps "duplication is a bug" intact). Write one when a block of work
+reaches a natural close; update it when a related entry lands or an open problem
+resolves. List it in the **Chapters** table at the top of `INDEX.md`. (This is
+the local, no-build precursor to the MkDocs site noted below; if that lands,
+chapters become Markdown pages.)
+
 ### 2.3 [docs/adr/](docs/adr/) — Architecture Decision Records
 
 One file per significant, costly-to-reverse decision (a frame convention, a
@@ -100,6 +116,9 @@ an ADR.
 - **The *why* behind a concrete change, and whether it worked?**
   → Logbook entry. Cross-reference Jugglebot paths under `external_changes:` if
   the control stack was touched.
+- **A high-level narrative tying a block of entries together?**
+  → Logbook chapter in [logbook/chapters/](logbook/chapters/). Synthesis only —
+  link down to the entries; don't restate them as new authority.
 - **A significant, hard-to-reverse structural decision?**
   → ADR under [docs/adr/](docs/adr/).
 - **The *why* behind a single line/block of code?**

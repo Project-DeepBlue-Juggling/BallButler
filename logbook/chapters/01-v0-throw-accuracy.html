@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 1 — V0 Throw Accuracy · Ball Butler Logbook</title>
+<style>
+  :root{
+    --bg:#f7f7f4; --panel:#ffffff; --ink:#1c2127; --muted:#5d6671;
+    --line:#e3e5e2; --accent:#0f766e; --accent-soft:#d7efeb;
+    --warn:#b45309; --bad:#b91c1c; --ok:#15803d;
+    --maxw:780px; --nav:248px;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
+
+  /* ---- top band ---- */
+  header.band{background:#11201e;color:#eaf2f0;padding:30px 24px 26px;border-bottom:3px solid var(--accent)}
+  header.band .inner{max-width:calc(var(--maxw) + var(--nav) + 64px);margin:0 auto}
+  header.band .kicker{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:#7fcabf;font-weight:600}
+  header.band h1{margin:.28em 0 .15em;font-size:30px;line-height:1.18;font-weight:700}
+  header.band p.sub{margin:.2em 0 0;color:#aebeba;max-width:62ch;font-size:15.5px}
+  header.band .meta{margin-top:14px;font-size:13px;color:#8aa39d;display:flex;gap:18px;flex-wrap:wrap}
+  header.band .meta b{color:#cfe0dc;font-weight:600}
+
+  /* ---- layout ---- */
+  .wrap{max-width:calc(var(--maxw) + var(--nav) + 64px);margin:0 auto;padding:0 24px;
+    display:grid;grid-template-columns:var(--nav) minmax(0,1fr);gap:40px;align-items:start}
+  nav.toc{position:sticky;top:18px;align-self:start;padding:24px 0 40px;font-size:14px}
+  nav.toc .lbl{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 10px}
+  nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:5px 12px;border-left:2px solid var(--line);line-height:1.3}
+  nav.toc a:hover{color:var(--ink);border-left-color:#bcd6d1}
+  nav.toc a.active{color:var(--accent);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+  nav.toc a.sub{padding-left:24px;font-size:13px}
+
+  main{padding:30px 0 80px;min-width:0}
+  section{scroll-margin-top:18px;margin-bottom:46px}
+  h2{font-size:23px;margin:0 0 .5em;padding-bottom:.28em;border-bottom:1px solid var(--line);font-weight:700}
+  h3{font-size:17.5px;margin:1.6em 0 .4em;font-weight:650}
+  p{margin:.7em 0}
+  a{color:var(--accent)}
+  code{font-family:var(--mono);font-size:.86em;background:#eef1ef;padding:1px 5px;border-radius:4px;color:#243b38}
+  strong{font-weight:650}
+  .lead{font-size:18px;color:#2a323b}
+
+  /* ---- stat cards ---- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:8px 0 4px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:15px 16px}
+  .stat .big{font-size:25px;font-weight:700;line-height:1;color:var(--accent)}
+  .stat .big small{font-size:14px;color:var(--muted);font-weight:600}
+  .stat .cap{font-size:12.5px;color:var(--muted);margin-top:7px;line-height:1.35}
+  .stat .from{font-size:12.5px;color:var(--muted);text-decoration:line-through;opacity:.7}
+
+  /* ---- tables ---- */
+  table{border-collapse:collapse;width:100%;margin:1em 0;font-size:14.5px}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+  thead th{background:#f0f2f0;border-bottom:2px solid var(--line);font-size:13px;letter-spacing:.02em}
+  tbody tr:hover{background:#fafbfa}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:13.5px}
+
+  /* ---- figures ---- */
+  figure{margin:1.4em 0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:hidden}
+  figure img{display:block;width:100%;height:auto;border-radius:6px}
+  figcaption{font-size:13.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  figcaption b{color:var(--ink)}
+
+  /* ---- callouts ---- */
+  .insight{background:var(--accent-soft);border:1px solid #b8ddd6;border-left:4px solid var(--accent);
+    border-radius:8px;padding:14px 18px;margin:1.1em 0}
+  .insight .tag{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .insight p{margin:.35em 0 0}
+  .note{background:#fff8ec;border:1px solid #f3e2bf;border-left:4px solid var(--warn);border-radius:8px;padding:12px 16px;margin:1.1em 0;font-size:14.5px}
+  .note .tag{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--warn);font-weight:700}
+
+  /* ---- arc / timeline ---- */
+  ol.arc{list-style:none;padding:0;margin:1.2em 0;counter-reset:step}
+  ol.arc>li{position:relative;padding:0 0 22px 38px;counter-increment:step}
+  ol.arc>li::before{content:counter(step);position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;
+    background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  ol.arc>li::after{content:"";position:absolute;left:12.5px;top:28px;bottom:0;width:2px;background:var(--line)}
+  ol.arc>li:last-child::after{display:none}
+  ol.arc h4{margin:.1em 0 .25em;font-size:16px}
+  ol.arc .when{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  ol.arc p{margin:.3em 0 0;font-size:14.5px}
+
+  /* ---- open problems ---- */
+  .prob{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin:.8em 0;display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:start}
+  .prob h4{margin:0;font-size:15.5px;grid-column:1}
+  .prob .body{grid-column:1;font-size:14px;color:#39424c;margin:0}
+  .prob .where{grid-column:1;font-size:12.5px;color:var(--muted);margin-top:2px}
+  .badge{grid-column:2;grid-row:1;justify-self:end;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .b-high{background:#fde8e8;color:var(--bad)}
+  .b-med{background:#fef3e2;color:var(--warn)}
+  .b-low{background:#eaf3ee;color:var(--ok)}
+
+  /* ---- source map ---- */
+  .src td:first-child{font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eaf3ee;color:var(--ok)}
+
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:13px;padding:20px 0 0}
+
+  @media (max-width:860px){
+    .wrap{grid-template-columns:1fr;gap:0}
+    nav.toc{position:static;border-bottom:1px solid var(--line);padding:18px 0;margin-bottom:6px}
+    nav.toc a{border-left:none;padding:6px 0}
+    nav.toc a.active{background:none;border-left:none}
+    nav.toc a.sub{padding-left:14px}
+  }
+</style>
+</head>
+<body>
+
+<header class="band">
+  <div class="inner">
+    <div class="kicker">Ball Butler · Engineering Logbook · Chapter 1</div>
+    <h1>V0 Throw Accuracy — the right place at the right time</h1>
+    <p class="sub">How the V0 thrower went from landing ~195&nbsp;mm off-target and ~140&nbsp;ms late to
+      ~31&nbsp;mm spatial error and under 10&nbsp;ms arrival error across the workspace — and why the
+      solution is deliberately <em>fractured</em>.</p>
+    <div class="meta">
+      <span><b>Span</b> 2026-06-10 → 2026-06-18</span>
+      <span><b>Entries</b> 6</span>
+      <span><b>Status</b> Resolved (with open follow-ups)</span>
+      <span><b>Subsystems</b> throwing · calibration · firmware · timing · tracking</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <p class="lbl">On this page</p>
+    <a href="#overview">Overview &amp; results</a>
+    <a href="#problem">The problem &amp; how we measured it</a>
+    <a href="#spatial">Spatial thread — aim-correction</a>
+    <a href="#temporal">Temporal thread — the timing campaign</a>
+    <a href="#arc" class="sub">The five-step arc</a>
+    <a href="#insights">Key insights &amp; developments</a>
+    <a href="#open">Open problems</a>
+    <a href="#sources">Source entries</a>
+  </nav>
+
+  <main>
+
+    <!-- ===================== OVERVIEW ===================== -->
+    <section id="overview">
+      <h2>Overview &amp; results</h2>
+      <p class="lead">Over nine days in June 2026, the V0 thrower was tuned along two axes — <strong>where</strong>
+        the ball lands and <strong>when</strong> it arrives — until it throws to a commanded point and time
+        accurately enough to feed a catching system.</p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="big">31&nbsp;<small>mm</small></div>
+          <div class="from">from 195 mm</div>
+          <div class="cap">Mean spatial error after the affine aim-correction — an <b>84% reduction</b>.</div>
+        </div>
+        <div class="stat">
+          <div class="big">&lt;10&nbsp;<small>ms</small></div>
+          <div class="from">from ~140 ms</div>
+          <div class="cap">Mean/median arrival-time error after the release-latency offset (max ~14 ms).</div>
+        </div>
+        <div class="stat">
+          <div class="big">44&nbsp;<small>ms</small></div>
+          <div class="cap">The residual constant actuator latency — measured, then simply commanded away.</div>
+        </div>
+        <div class="stat">
+          <div class="big">2</div>
+          <div class="cap">Root-cause "fixes" that turned out to be <b>dead ends or measurement artifacts</b>.</div>
+        </div>
+      </div>
+
+      <div class="insight">
+        <span class="tag">The headline idea — a "fractured" solution</span>
+        <p>Rather than insist on one physically-correct model of the machine, each sub-problem was solved with
+          the tool that actually works. <strong>Space</strong> is handled by a single empirical 2D affine that
+          absorbs <em>every</em> spatial execution error at once (yaw, pitch, speed, geometry). <strong>Time</strong>
+          is handled by one measured constant — <code>BB_OP_THROW_RELEASE_LATENCY_MS = 44</code> — applied as
+          "command the throw 44&nbsp;ms earlier." Two clean knobs; no grand unified physics.</p>
+      </div>
+    </section>
+
+    <!-- ===================== PROBLEM ===================== -->
+    <section id="problem">
+      <h2>The problem &amp; how we measured it</h2>
+      <p>The thrower's pipeline is open-loop: <code>global → BB-local → inverse-ballistics solve → throw</code>.
+        It assumes an idealised machine (forward kinematics, release point, launch timing). Real hardware departs
+        from that model in ways that are stable run-to-run but hard to pin on any single physical cause — so the
+        net effect shows up as a <strong>systematic bias</strong> in both landing position and arrival time.</p>
+
+      <h3>Two independent measurement grounds</h3>
+      <p><strong>Space</strong> is measured with motion capture (QTM): command a known grid of throws, record where
+        the balls actually land, fit a correction. <strong>Time</strong> is measured with a sensorized
+        <strong>catching cone</strong> — a piezo contact sensor on a time-synced Teensy that latches a wall-clock
+        timestamp at impact, on the <em>same</em> <code>0x7DD</code> time-sync domain that schedules the throw.
+        That gives mocap-free arrival times at ~µs sensor resolution against ~1&nbsp;ms command granularity.</p>
+
+      <p>The temporal measurand is deliberately end-to-end:
+        <code>arrival_error = t_catch − predicted_landing_time</code>, integrating the whole chain (command latency,
+        firmware scheduling, release lag, flight model, cone geometry). The protocol has three phases — <b>R</b>
+        repeatability (calibrates the systematic offset δ), <b>D</b> delay sweep, <b>X</b> distance sweep — with a
+        crisp acceptance bar: <strong>|mean residual| ≤ 10&nbsp;ms per group</strong> after δ removal. Misses and
+        unsynced events are recorded and excluded, never silently dropped.</p>
+    </section>
+
+    <!-- ===================== SPATIAL ===================== -->
+    <section id="spatial">
+      <h2>Spatial thread — the aim-correction affine</h2>
+      <p>The thrower landed balls a systematic ~195&nbsp;mm from where it was aimed, consistently offset and slightly
+        sheared across the target grid. Rather than chase each physical contributor, the approach is empirical: learn
+        a single <strong>2×3 affine</strong> in the BB-local ground plane that warps the commanded aim point to cancel
+        the measured bias, applied between the global→local transform and the inverse-ballistics solve.</p>
+
+      <figure>
+        <img src="images/spatial-affine-correction.png" alt="Scatter of commanded targets, measured landings before correction, and landings after the affine correction, in the BB-local ground plane.">
+        <figcaption><b>One fit, the whole grid corrected.</b> Red ✕ = commanded target; orange = measured mean landing
+          (before, the long orange leaders show the ~195&nbsp;mm bias); green = after the affine correction — landing
+          essentially on target. The bias was mostly a rigid ~(117, −108)&nbsp;mm offset plus a few percent of
+          scale/shear.</figcaption>
+      </figure>
+
+      <table>
+        <thead><tr><th>Per grid cell</th><th class="num">Uncorrected</th><th class="num">Corrected</th></tr></thead>
+        <tbody>
+          <tr><td>Mean error</td><td class="num">194.6 mm</td><td class="num">30.9 mm</td></tr>
+          <tr><td>Max</td><td class="num">224.8 mm</td><td class="num">139.7 mm</td></tr>
+          <tr><td>Std</td><td class="num">—</td><td class="num">30.0 mm</td></tr>
+        </tbody>
+      </table>
+
+      <p>Three things make this number trustworthy: it <strong>generalises</strong> (a fit predicting 27.5&nbsp;mm
+        residual measured 30.9&nbsp;mm on a fresh out-of-sample session — within 3&nbsp;mm, so the affine captured a
+        real bias, not noise); the corrected residual is now <strong>mostly random, not systematic</strong>
+        (~13.5&nbsp;mm systematic vs ~34&nbsp;mm throw-to-throw scatter); and a second-stage refit buys only ~7%, so
+        the map is considered done. <strong>Throw-to-throw repeatability — not aim — is now the spatial bottleneck.</strong></p>
+
+      <div class="note">
+        <span class="tag">Coupling to watch</span>
+        <p>This affine was fit <em>with</em> the machine's then-current (late, hot) release. So any later firmware
+          change to release timing or velocity moves every landing and <strong>invalidates the affine</strong> — the
+          discipline that emerged: treat a firmware fix + spatial re-fit + repeat campaign as one before/after experiment.</p>
+      </div>
+    </section>
+
+    <!-- ===================== TEMPORAL ===================== -->
+    <section id="temporal">
+      <h2>Temporal thread — the timing campaign</h2>
+      <p>With space handled, the question became: does the ball arrive <em>when</em> the system says it will? The
+        first campaign measured a stable systematic delay of <strong>δ ≈ +126&nbsp;ms</strong> (the ball arriving
+        late), with the delay sweep showing no slope vs commanded delay — exonerating the wall-clock scheduler and
+        pointing at the physical throw. Decomposed, δ was ~82&nbsp;ms <em>release lag</em> + ~51&nbsp;ms
+        <em>flight stretch</em> − 7&nbsp;ms ball radius. Chasing those two terms produced the most instructive part
+        of the whole project — including two wrong turns that each looked completely real.</p>
+
+      <h3 id="arc">The five-step arc</h3>
+      <ol class="arc">
+        <li>
+          <h4>Release-lag root cause — a real firmware bug <span class="when">· 2026-06-11</span></h4>
+          <p>Two independent, individually-correct "decel-zero" mechanisms in <code>HandPathPlanner</code> cancel each
+            other, so the whole throw stroke runs <em>after</em> the commanded time and the ball releases
+            <code>t2 = 0.273/v ≈ 83&nbsp;ms</code> late at 3.28&nbsp;m/s — matching the measured 82.3&nbsp;ms exactly.
+            A two-line fix. Deferred until the rest of the picture was clear.</p>
+        </li>
+        <li>
+          <h4>The "warm-up drift" — which was not a thrower effect at all <span class="when">· 2026-06-12 → 06-16</span></h4>
+          <p>A distance sweep <em>looked</em> like arrival error grew with catch distance. It didn't — it tracked
+            <strong>session time</strong>, ramping from ~0&nbsp;ms cold to a ~115&nbsp;ms plateau over ~10&nbsp;min. After
+            ruling out temperature, duty-cycle, power-on, and ROS state, the real cause was a
+            <strong>clock-sync measurement artifact</strong>: the can-bridge time master <em>slews</em> (instead of
+            stepping) when it re-acquires the Jetson clock after a gap, so its broadcast — and every slave that follows
+            it, including the cone — converges over ~30&nbsp;min, masquerading as a warm-up. The throw was temporally
+            stable the whole time. Fixed with step-on-re-acquisition + honest staleness.</p>
+        </li>
+        <li>
+          <h4>Release-lag fix validated <span class="when">· 2026-06-17</span></h4>
+          <p>With the firmware fix flashed and the clock fixed, systematic delay dropped <strong>~140 → ~44&nbsp;ms</strong>
+            and measured release lag fell to ≈0. The session concluded the residual 44&nbsp;ms was a real launch-execution
+            error: the ball leaving ~3° steeper and ~10% faster than commanded.</p>
+        </li>
+        <li>
+          <h4>…but that "+3° / +10% hot launch" was a second artifact <span class="when">· 2026-06-18</span></h4>
+          <p>The hand encoder (now streaming 1&nbsp;kHz estimates) showed the hand reaches <strong>98–101% of commanded
+            velocity</strong> and the <strong>full stroke</strong> — it just gets there ~44&nbsp;ms late. The "+3°/hot"
+            reading was the 44&nbsp;ms latency contaminating the back-extrapolated mocap velocity (evaluated <em>before</em>
+            the actual release), compounded by unreliable geometry fits. Execution is essentially as-commanded.</p>
+        </li>
+        <li>
+          <h4>Resolution — measure the constant, command it away <span class="when">· 2026-06-18</span></h4>
+          <p>What remains is a <strong>constant ~44&nbsp;ms transport/actuator latency</strong>, flat across distance,
+            speed, and pitch. Deployed as <code>BB_OP_THROW_RELEASE_LATENCY_MS = 44</code> — command the throw
+            44&nbsp;ms earlier so the latency cancels and the ball arrives on time. Purely temporal, so it leaves the
+            spatial affine untouched. <strong>Arrival error: &lt;10&nbsp;ms mean/median, ≤14&nbsp;ms max.</strong></p>
+        </li>
+      </ol>
+
+      <figure>
+        <img src="images/temporal-warmup-ramp.png" alt="Left: arrival error rising with session time, r=+0.90. Right: the same points vs catch distance, coloured by time, showing the apparent distance trend is really a time trend.">
+        <figcaption><b>"It tracks <i>when</i>, not <i>where</i>."</b> Left: raw arrival error climbs with session time
+          (r&nbsp;=&nbsp;+0.90), cold ~0&nbsp;ms → +115&nbsp;ms plateau over ~10&nbsp;min. Right: the apparent
+          error-vs-distance trend (r&nbsp;=&nbsp;+0.60) is an artifact of the operator moving the cone outward <em>as the
+          session aged</em> — colour (time) separates the bands, distance does not.</figcaption>
+      </figure>
+
+      <figure>
+        <img src="images/temporal-clock-vs-physical.png" alt="Decomposition of cone arrival error into a clock term A and a physical term B over 35 minutes; A carries the entire ramp while B stays flat near +140 ms.">
+        <figcaption><b>The drift lived in the clock, not the throw.</b> Decomposing cone arrival error (red) into
+          <span style="color:#d2691e">A = cone-clock</span> and <span style="color:#1f6fb4">B = physical arrival
+          (mocap, an independent clock)</span>: <strong>A carries the entire ramp</strong> (−600 → 0&nbsp;ms as the bridge
+          clock re-converges), while <strong>B is flat at +140&nbsp;ms</strong> — the true, convergence-independent δ. The
+          throw never drifted.</figcaption>
+      </figure>
+
+      <p>Two larger root-cause routes were also pursued and <strong>abandoned on purpose</strong>, documented so they
+        aren't re-run: a <em>kinematic system-ID</em> (fit the physical geometry + per-axis calibration from mocap
+        launch state) gave physically-absurd, run-to-run-unstable parameters — mocap launch-state inference simply can't
+        cleanly separate geometry / execution / timing on this rig; and a <em>torque-feedforward sweep</em> found the
+        release lag is <strong>non-monotonic</strong> in feedforward (the original hand-only term is already optimal;
+        more or less both make it worse), which proves the 44&nbsp;ms is a constant transport latency — not a tracking
+        lag, so ODrive gain tuning won't remove it either.</p>
+    </section>
+
+    <!-- ===================== INSIGHTS ===================== -->
+    <section id="insights">
+      <h2>Key insights &amp; developments</h2>
+      <p>The durable takeaways — the things that outlive any one fix and should shape how the next problem is approached.</p>
+
+      <div class="insight"><span class="tag">1 · Fracture the problem</span>
+        <p>Space and time are separable execution errors; solving each with the tool that works (empirical affine /
+          measured constant) beat every attempt at one unified physical model.</p></div>
+
+      <div class="insight"><span class="tag">2 · Empirical beat physical system-ID</span>
+        <p>On this rig, mocap launch-state inference cannot cleanly separate geometry, launch execution, and release
+          timing — the joint fit is unreliable. The <strong>sensorized cone</strong> (direct landing position + catch
+          timestamp) is the ground truth; use it rather than more kinematic-ID.</p></div>
+
+      <div class="insight"><span class="tag">3 · Verify the measurement before theorising the mechanism</span>
+        <p>Three separate "physical effects" turned out to be measurement artifacts: the warm-up "drift" (a bridge
+          clock slew), the "+3° hot launch" (latency-contaminated velocity), and a phantom "+115&nbsp;ms cone transit"
+          (a KF track silently coasting off-gate). The recurring fix was an <strong>independent clock or sensor</strong>.</p></div>
+
+      <div class="insight"><span class="tag">4 · Record the dead ends</span>
+        <p>The non-monotonic feedforward sweep and the unstable kinematic-ID are written down with their numbers
+          precisely so the next person doesn't re-run them — and because each <em>negative</em> result was itself
+          diagnostic (the FF result is what proved the latency is transport, not bandwidth).</p></div>
+
+      <div class="insight"><span class="tag">5 · The corrections are coupled</span>
+        <p>The aim-correction was fit with the late/hot release, so a release-timing change forces a spatial re-fit.
+          "Fix + re-fit + repeat campaign as one before/after experiment" is now the standing discipline.</p></div>
+    </section>
+
+    <!-- ===================== OPEN ===================== -->
+    <section id="open">
+      <h2>Open problems</h2>
+      <p>Aggregated and ranked from the six entries' follow-ups — the things still genuinely unresolved at the close
+        of this chapter.</p>
+
+      <div class="prob">
+        <h4>Cone piezo no-fire on close catches</h4>
+        <span class="badge b-high">High</span>
+        <p class="body">~40–55% of <em>spatially-close</em> throws don't trigger the contact sensor and are excluded as
+          "misses." This caps the cone's measurement yield <strong>and</strong> would directly matter for real catching.
+          A sensitivity/threshold pass is warranted.</p>
+        <p class="where">Carried from 2026-06-12 (#6) → 2026-06-18 (#1) · still outstanding</p>
+      </div>
+
+      <div class="prob">
+        <h4>The 44 ms latency is compensated, not localized</h4>
+        <span class="badge b-med">Medium</span>
+        <p class="body">It's characterized as a constant transport delay and offset away, but not traced to a stage
+          (CAN command pipeline vs ODrive command-processing vs estimator). If we ever want it <em>gone</em> rather than
+          cancelled, that's the dig.</p>
+        <p class="where">2026-06-18 (#4)</p>
+      </div>
+
+      <div class="prob">
+        <h4>yaw_min = 0° rejects slightly-negative required yaw</h4>
+        <span class="badge b-med">Medium</span>
+        <p class="body">3/75 temporal throws failed inverse-ballistics on "Yaw out of BB range [0,185°]." Limits some
+          workspace directions; revisit the yaw zero/range if those targets matter.</p>
+        <p class="where">2026-06-18 (#2)</p>
+      </div>
+
+      <div class="prob">
+        <h4>Affine workspace coverage &amp; height extrapolation</h4>
+        <span class="badge b-low">Low</span>
+        <p class="body">The aim-correction is a first-order 2D affine fit at z&nbsp;=&nbsp;750&nbsp;mm with no z-bias term.
+          "Very good across most of the workspace," but the far corners and cone-height plane are extrapolations — confirm
+          or re-fit if they drift.</p>
+        <p class="where">2026-06-10 &amp; 2026-06-18 (#3)</p>
+      </div>
+
+      <div class="prob">
+        <h4>Catch feedforward is untouched</h4>
+        <span class="badge b-low">Low</span>
+        <p class="body"><code>Trajectory.h buildCatch</code> was left hand-only; its own inertia phasing (ball acquired
+          mid-stroke) is an untested potential improvement — relevant once catching is integrated.</p>
+        <p class="where">2026-06-18 (#5)</p>
+      </div>
+
+      <div class="prob">
+        <h4>Deferred temporary change: relaxed mocap alignment gate</h4>
+        <span class="badge b-low">Low</span>
+        <p class="body">The mocap publish gate was relaxed to 2000&nbsp;mm / 180° to unblock a Base-offset session. It
+          transforms no poses, but is a deliberate relic — <strong>restore 2.5&nbsp;mm / 1.0°</strong> if the QTM frame is
+          ever re-zeroed.</p>
+        <p class="where">2026-06-10</p>
+      </div>
+    </section>
+
+    <!-- ===================== SOURCES ===================== -->
+    <section id="sources">
+      <h2>Source entries</h2>
+      <p>This chapter is a reading lens, not a source of record — every claim above lives in one of these logbook
+        entries, which remain authoritative. Newest first.</p>
+      <table class="src">
+        <thead><tr><th>Date</th><th>Entry</th><th>What it established</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><a href="../2026-06-18-temporal-accuracy-resolved-fractured-solution.md">06-18</a></td>
+            <td>Temporal accuracy resolved (fractured solution)</td>
+            <td>The 44 ms offset; the "+3°/hot" was an artifact; kinematic-ID &amp; feedforward ruled out. <span class="pill">resolved</span></td>
+          </tr>
+          <tr>
+            <td><a href="../2026-06-17-release-lag-fix-validated-launch-discrepancy.md">06-17</a></td>
+            <td>Release-lag fix validated; launch discrepancy</td>
+            <td>140 → 44 ms on hardware; release lag ≈ 0; "+3°/hot launch" reading (later withdrawn). <span class="pill">resolved</span></td>
+          </tr>
+          <tr>
+            <td><a href="../2026-06-12-temporal-warmup-drift.md">06-12</a></td>
+            <td>Temporal "warm-up drift"</td>
+            <td>The drift is a bridge clock-sync artifact, not a thrower effect; clock fix. <span class="pill">resolved</span></td>
+          </tr>
+          <tr>
+            <td><a href="../2026-06-11-release-lag-firmware-analysis.md">06-11</a></td>
+            <td>Release-lag firmware analysis</td>
+            <td>Two decel-zero mechanisms cancel; the 2-line <code>HandPathPlanner</code> fix. <span class="pill">resolved</span></td>
+          </tr>
+          <tr>
+            <td><a href="../2026-06-10-temporal-accuracy-protocol.md">06-10</a></td>
+            <td>Temporal-accuracy protocol + cone uplink</td>
+            <td>The R/D/X protocol, the cone as a µs arrival sensor, first δ decomposition. <span class="pill">resolved</span></td>
+          </tr>
+          <tr>
+            <td><a href="../2026-06-10-throw-aim-correction-validated.md">06-10</a></td>
+            <td>Throw aim-correction validated</td>
+            <td>The 2D affine; 195 → 31 mm (84%); repeatability is the new spatial bottleneck. <span class="pill">resolved</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <p>Chapter 1 of the Ball Butler engineering logbook · synthesis layer (non-authoritative — links down to the
+        entries) · see <a href="../INDEX.md">INDEX.md</a> for all entries and
+        <a href="../../DOCUMENTATION_GUIDE.md">DOCUMENTATION_GUIDE.md</a> for how the doc layers fit together.</p>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  // Highlight the current section in the sidebar as it scrolls into view.
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'));
+    var byId = {};
+    links.forEach(function(a){ byId[a.getAttribute('href').slice(1)] = a; });
+    var sections = links
+      .map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); })
+      .filter(Boolean);
+    var current = null;
+    function setActive(id){
+      if(id === current) return;
+      current = id;
+      links.forEach(function(a){ a.classList.remove('active'); });
+      if(byId[id]) byId[id].classList.add('active');
+    }
+    if('IntersectionObserver' in window){
+      var seen = {};
+      var obs = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ seen[e.target.id] = e.isIntersecting ? e.intersectionRatio : 0; });
+        var best = null, bestR = 0;
+        Object.keys(seen).forEach(function(id){ if(seen[id] > bestR){ bestR = seen[id]; best = id; } });
+        if(best) setActive(best);
+      }, {rootMargin:'-10% 0px -70% 0px', threshold:[0,0.25,0.5,1]});
+      sections.forEach(function(s){ obs.observe(s); });
+    }
+  })();
+</script>
+</body>
+</html>

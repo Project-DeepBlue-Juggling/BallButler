@@ -4,6 +4,19 @@ All logbook entries, newest first. Maintained by hand — add a row when you add
 entry. See [README.md](README.md) for the format and [TEMPLATE.md](TEMPLATE.md)
 to start a new entry.
 
+## Chapters
+
+Narrative syntheses that read a related block of entries top-to-bottom — the
+development, the significant developments/insights, and the open problems. A
+chapter is a **reading lens, not a source of record**: it links down to the
+entries, which stay authoritative. Open the `.html` in a browser.
+
+| Span | Chapter | Covers |
+|------|---------|--------|
+| 2026-06-10 → 2026-06-18 | [01 · V0 Throw Accuracy](chapters/01-v0-throw-accuracy.html) | The spatial (aim-correction) + temporal (release-latency) campaign — all 6 entries below |
+
+## Entries
+
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
 | 2026-06-18 | resolved | investigation | throwing, firmware, calibration, timing | Temporal accuracy resolved (≈44 ms → <10 ms): aim-correction (spatial) + measured release-latency offset (temporal); kinematic-ID & feedforward root-fixes ruled out | [temporal-accuracy-resolved-fractured-solution](2026-06-18-temporal-accuracy-resolved-fractured-solution.md) |
