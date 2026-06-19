@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chapter 1 — V0 Throw Accuracy · Ball Butler Logbook</title>
+<script>/* set theme before paint — no flash. Defaults to dark. */
+(function(){document.documentElement.setAttribute('data-theme', localStorage.getItem('chTheme')||'dark');})();</script>
 <style>
   :root{
     --bg:#f7f7f4; --panel:#ffffff; --ink:#1c2127; --muted:#5d6671;
@@ -13,6 +15,29 @@
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
+  html[data-theme="dark"]{
+    --bg:#0f1316; --panel:#171c21; --ink:#e7ecf0; --muted:#9aa6b2;
+    --line:#283037; --accent:#34d3c0; --accent-soft:#12332f;
+    --warn:#fbbf24; --bad:#f87171; --ok:#4ade80;
+  }
+  html[data-theme="dark"] code{background:#222a30;color:#cdeae5}
+  html[data-theme="dark"] thead th{background:#1c2228}
+  html[data-theme="dark"] tbody tr:hover{background:#1b2127}
+  html[data-theme="dark"] .insight{border-color:#1f5a52}
+  html[data-theme="dark"] .note{background:#2a2418;border-color:#5a4a22}
+  html[data-theme="dark"] .b-high{background:#3a1f1f;color:#fca5a5}
+  html[data-theme="dark"] .b-med{background:#3a2e18;color:#fcd34d}
+  html[data-theme="dark"] .b-low,html[data-theme="dark"] .pill{background:#1c2f24;color:#86efac}
+  html[data-theme="dark"] .prob .body{color:#c4ccd4}
+  html[data-theme="dark"] ol.arc>li::before{color:#0b1f1c}
+  /* keep figure cards light so the white-background plots frame cleanly */
+  html[data-theme="dark"] figure{background:#f5f6f4;border-color:#2a2f36}
+  html[data-theme="dark"] figcaption{color:#4b5563}
+  html[data-theme="dark"] figcaption b{color:#1c2127}
+  #themeToggle{position:fixed;top:14px;right:14px;z-index:50;width:40px;height:40px;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:18px;cursor:pointer;
+    line-height:1;box-shadow:0 1px 5px rgba(0,0,0,.18)}
+  #themeToggle:hover{border-color:var(--accent)}
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
@@ -113,14 +138,15 @@
 </style>
 </head>
 <body>
+<button id="themeToggle" aria-label="Toggle light/dark mode" title="Toggle light / dark">🌙</button>
 
 <header class="band">
   <div class="inner">
     <div class="kicker">Ball Butler · Engineering Logbook · Chapter 1</div>
     <h1>V0 Throw Accuracy — the right place at the right time</h1>
     <p class="sub">How the V0 thrower went from landing ~195&nbsp;mm off-target and ~140&nbsp;ms late to
-      ~31&nbsp;mm spatial error and under 10&nbsp;ms arrival error across the workspace — and why the
-      solution is deliberately <em>fractured</em>.</p>
+      ~31&nbsp;mm spatial error and under 10&nbsp;ms arrival error across the workspace — with two
+      independent corrections, one for space and one for time.</p>
     <div class="meta">
       <span><b>Span</b> 2026-06-10 → 2026-06-18</span>
       <span><b>Entries</b> 6</span>
@@ -174,12 +200,12 @@
       </div>
 
       <div class="insight">
-        <span class="tag">The headline idea — a "fractured" solution</span>
-        <p>Rather than insist on one physically-correct model of the machine, each sub-problem was solved with
-          the tool that actually works. <strong>Space</strong> is handled by a single empirical 2D affine that
-          absorbs <em>every</em> spatial execution error at once (yaw, pitch, speed, geometry). <strong>Time</strong>
-          is handled by one measured constant — <code>BB_OP_THROW_RELEASE_LATENCY_MS = 44</code> — applied as
-          "command the throw 44&nbsp;ms earlier." Two clean knobs; no grand unified physics.</p>
+        <span class="tag">How it was solved — in this case</span>
+        <p>The fix ended up split across two independent knobs. <strong>Space</strong> is handled by a single
+          empirical 2D affine that absorbs <em>every</em> spatial execution error at once (yaw, pitch, speed,
+          geometry). <strong>Time</strong> is handled by one measured constant —
+          <code>BB_OP_THROW_RELEASE_LATENCY_MS = 44</code> — applied as "command the throw 44&nbsp;ms earlier."
+          That split was simply what worked for this problem.</p>
       </div>
     </section>
 
@@ -216,7 +242,7 @@
 
       <figure>
         <img src="images/spatial-affine-correction.png" alt="Scatter of commanded targets, measured landings before correction, and landings after the affine correction, in the BB-local ground plane.">
-        <figcaption><b>One fit, the whole grid corrected.</b> Red ✕ = commanded target; orange = measured mean landing
+        <figcaption><b>Figure 1 · One fit, the whole grid corrected.</b> Red ✕ = commanded target; orange = measured mean landing
           (before, the long orange leaders show the ~195&nbsp;mm bias); green = after the affine correction — landing
           essentially on target. The bias was mostly a rigid ~(117, −108)&nbsp;mm offset plus a few percent of
           scale/shear.</figcaption>
@@ -281,11 +307,13 @@
             error: the ball leaving ~3° steeper and ~10% faster than commanded.</p>
         </li>
         <li>
-          <h4>…but that "+3° / +10% hot launch" was a second artifact <span class="when">· 2026-06-18</span></h4>
-          <p>The hand encoder (now streaming 1&nbsp;kHz estimates) showed the hand reaches <strong>98–101% of commanded
-            velocity</strong> and the <strong>full stroke</strong> — it just gets there ~44&nbsp;ms late. The "+3°/hot"
-            reading was the 44&nbsp;ms latency contaminating the back-extrapolated mocap velocity (evaluated <em>before</em>
-            the actual release), compounded by unreliable geometry fits. Execution is essentially as-commanded.</p>
+          <h4>…the "+3° / +10% hot launch" reading was wrong — but so was "as-commanded"
+            <span class="when">· 2026-06-18, re-tested 2026-06-19</span></h4>
+          <p>2026-06-18 reversed the "+3°/hot" claim, arguing from the hand encoder (hand reaches 98–101% of commanded
+            velocity and the full stroke) that execution is essentially as-commanded. A direct trajectory re-test for
+            this chapter (Figure&nbsp;4) shows the fuller picture: the ball launches at the <strong>commanded angle</strong>
+            (~71°, not steeper) but at a <strong>uniform ~7% speed deficit</strong> — so it is neither hot nor exactly
+            as-commanded. Detail below.</p>
         </li>
         <li>
           <h4>Resolution — measure the constant, command it away <span class="when">· 2026-06-18</span></h4>
@@ -298,7 +326,7 @@
 
       <figure>
         <img src="images/temporal-warmup-ramp.png" alt="Left: arrival error rising with session time, r=+0.90. Right: the same points vs catch distance, coloured by time, showing the apparent distance trend is really a time trend.">
-        <figcaption><b>"It tracks <i>when</i>, not <i>where</i>."</b> Left: raw arrival error climbs with session time
+        <figcaption><b>Figure 2 · It tracks <i>when</i>, not <i>where</i>.</b> Left: raw arrival error climbs with session time
           (r&nbsp;=&nbsp;+0.90), cold ~0&nbsp;ms → +115&nbsp;ms plateau over ~10&nbsp;min. Right: the apparent
           error-vs-distance trend (r&nbsp;=&nbsp;+0.60) is an artifact of the operator moving the cone outward <em>as the
           session aged</em> — colour (time) separates the bands, distance does not.</figcaption>
@@ -306,12 +334,61 @@
 
       <figure>
         <img src="images/temporal-clock-vs-physical.png" alt="Decomposition of cone arrival error into a clock term A and a physical term B over 35 minutes; A carries the entire ramp while B stays flat near +140 ms.">
-        <figcaption><b>The drift lived in the clock, not the throw.</b> Decomposing cone arrival error (red) into
+        <figcaption><b>Figure 3 · The drift lived in the clock, not the throw.</b> Decomposing cone arrival error (red) into
           <span style="color:#d2691e">A = cone-clock</span> and <span style="color:#1f6fb4">B = physical arrival
           (mocap, an independent clock)</span>: <strong>A carries the entire ramp</strong> (−600 → 0&nbsp;ms as the bridge
           clock re-converges), while <strong>B is flat at +140&nbsp;ms</strong> — the true, convergence-independent δ. The
           throw never drifted.</figcaption>
       </figure>
+
+      <div class="note">
+        <span class="tag">Why the orange and blue points mirror each other (a review question)</span>
+        <p>The two series share one quantity with opposite sign:
+          <code>A = cone_catch − mocap_cross</code> and <code>B = mocap_cross − predicted</code>, so
+          <code>A + B = cone_catch − predicted</code> — <code>mocap_cross</code> cancels. Any per-throw error in that
+          single shared term (the ball is <em>caught</em> at the plane, which perturbs its descent and the
+          plane-crossing estimate) therefore pushes A and B by <strong>equal and opposite</strong> amounts. That's the
+          mirror image you see — it's a property of the decomposition, not a physical coupling, and it's exactly why
+          the <em>sum</em> (red) is the robust quantity while the per-throw split is noisy. The <em>trend</em> split
+          (A ramps, B flat) survives because it's a slow average, immune to that symmetric per-throw noise.</p>
+      </div>
+
+      <h3>Did it really launch hot? A trajectory re-test</h3>
+      <p>The "+3° steeper / +10% hot" claim was never actually visualised at the time, so for this chapter the two clean
+        post-fix sessions (2026-06-17, 52 throws total) were re-analysed from the raw mocap with one rule: lean only on
+        quantities that <em>cannot</em> be faked by the 44&nbsp;ms release latency or by the wrong model release height —
+        the <strong>horizontal launch speed</strong> (a constant slope; a time offset can't change it) and the
+        <strong>apex height</strong> (a late release shifts the arc in time, not in height).</p>
+
+      <figure>
+        <img src="images/hot-launch-test.png" alt="Left: one throw's measured mocap parabola against the commanded-launch prediction — same angle but the measured arc falls short and lower. Right: horizontal and vertical launch-speed ratios across 52 throws, both clustered at about 0.93 of commanded, below the 1.0 commanded line.">
+        <figcaption><b>Figure 4 · Predicted vs measured launch — it is not hot.</b> Left: a representative throw —
+          measured mocap ball (blue) against the commanded-launch parabola (orange dashed), both launched from the same
+          point. Same angle, but the measured arc <strong>falls short and peaks lower</strong> → slower, not steeper.
+          Right: across all 52 post-fix throws, horizontal speed (<i>vh</i>, latency-free) and vertical speed
+          (<i>vz</i>, from apex height) both sit at <strong>≈0.93× commanded</strong> — a uniform ~7% speed deficit,
+          well below the "hot would be&nbsp;&gt;&nbsp;1" line. <code>g_eff</code> matches true gravity to &lt;0.1%, so
+          drag is negligible and the apex is a clean <code>vz</code>.</figcaption>
+      </figure>
+
+      <p>The verdict (tool: <code>zTesting/throw_testing/temporal_accuracy/plot_launch_geometry.py</code>): the measured
+        arc has the <strong>same launch angle</strong> as commanded (71.1° vs 71.0°) but a <em>lower</em> apex
+        (≈428 vs 491&nbsp;mm) and shorter range, because <code>vh</code> and <code>vz</code> are <strong>both ≈0.93×
+        commanded</strong>. A genuinely hot/steeper launch would peak <em>higher</em>; this one peaks lower. So both
+        prior readings were off:</p>
+      <ul>
+        <li>2026-06-17's <strong>"+3° steeper / +10% hot"</strong> is refuted — the inflated <code>vz</code> came from
+          extrapolating velocity to an announced release point that sits <strong>~335&nbsp;mm below</strong> the true
+          launch height.</li>
+        <li>2026-06-18's <strong>"execution as-commanded"</strong> is also incomplete — the <em>hand</em> reaches
+          commanded velocity, yet the <em>ball</em> leaves ~7% slower (a hand→ball transfer gap the hand encoder can't
+          see).</li>
+      </ul>
+      <p>This doesn't change the deployed fix — <code>aim_correction</code> empirically absorbs the spatial consequence
+        of a uniform speed scale, and the temporal offset is untouched — but it corrects the record on <em>what the
+        residual execution error actually is</em>, and points at a single launch-speed calibration as the lever if the
+        error is ever fixed at the root. <span class="when">This re-analysis is new (2026-06-19); the 06-17 and 06-18
+        entries still carry the superseded reading and need a withdrawn-claim note.</span></p>
 
       <p>Two larger root-cause routes were also pursued and <strong>abandoned on purpose</strong>, documented so they
         aren't re-run: a <em>kinematic system-ID</em> (fit the physical geometry + per-axis calibration from mocap
@@ -325,30 +402,28 @@
     <!-- ===================== INSIGHTS ===================== -->
     <section id="insights">
       <h2>Key insights &amp; developments</h2>
-      <p>The durable takeaways — the things that outlive any one fix and should shape how the next problem is approached.</p>
+      <p>The methodological takeaways — the things that outlived any one fix on this campaign.</p>
 
-      <div class="insight"><span class="tag">1 · Fracture the problem</span>
-        <p>Space and time are separable execution errors; solving each with the tool that works (empirical affine /
-          measured constant) beat every attempt at one unified physical model.</p></div>
-
-      <div class="insight"><span class="tag">2 · Empirical beat physical system-ID</span>
+      <div class="insight"><span class="tag">1 · Empirical beat physical system-ID</span>
         <p>On this rig, mocap launch-state inference cannot cleanly separate geometry, launch execution, and release
           timing — the joint fit is unreliable. The <strong>sensorized cone</strong> (direct landing position + catch
           timestamp) is the ground truth; use it rather than more kinematic-ID.</p></div>
 
-      <div class="insight"><span class="tag">3 · Verify the measurement before theorising the mechanism</span>
-        <p>Three separate "physical effects" turned out to be measurement artifacts: the warm-up "drift" (a bridge
-          clock slew), the "+3° hot launch" (latency-contaminated velocity), and a phantom "+115&nbsp;ms cone transit"
-          (a KF track silently coasting off-gate). The recurring fix was an <strong>independent clock or sensor</strong>.</p></div>
+      <div class="insight"><span class="tag">2 · Verify the measurement before theorising the mechanism</span>
+        <p>Several "physical effects" here turned out to be measurement-limited readings: the warm-up "drift" (a bridge
+          clock slew), the "+3° hot launch" (velocity extrapolated to a wrong release height — re-tested in Figure&nbsp;4),
+          and a phantom "+115&nbsp;ms cone transit" (a KF track silently coasting off-gate). The recurring fix was an
+          <strong>independent clock or sensor</strong>, and an assumption-light quantity (apex height, horizontal speed).</p></div>
 
-      <div class="insight"><span class="tag">4 · Record the dead ends</span>
+      <div class="insight"><span class="tag">3 · Record the dead ends</span>
         <p>The non-monotonic feedforward sweep and the unstable kinematic-ID are written down with their numbers
           precisely so the next person doesn't re-run them — and because each <em>negative</em> result was itself
           diagnostic (the FF result is what proved the latency is transport, not bandwidth).</p></div>
 
-      <div class="insight"><span class="tag">5 · The corrections are coupled</span>
-        <p>The aim-correction was fit with the late/hot release, so a release-timing change forces a spatial re-fit.
-          "Fix + re-fit + repeat campaign as one before/after experiment" is now the standing discipline.</p></div>
+      <div class="insight"><span class="tag">4 · The corrections are coupled</span>
+        <p>The aim-correction was fit with the machine's as-built release (late, and ~7% slow), so a release-timing or
+          speed change forces a spatial re-fit. "Fix + re-fit + repeat campaign as one before/after experiment" is now
+          the standing discipline.</p></div>
     </section>
 
     <!-- ===================== OPEN ===================== -->
@@ -421,7 +496,7 @@
           <tr>
             <td><a href="../2026-06-18-temporal-accuracy-resolved-fractured-solution.md">06-18</a></td>
             <td>Temporal accuracy resolved (fractured solution)</td>
-            <td>The 44 ms offset; the "+3°/hot" was an artifact; kinematic-ID &amp; feedforward ruled out. <span class="pill">resolved</span></td>
+            <td>The 44 ms offset; kinematic-ID &amp; feedforward ruled out. ("+3°/hot" called an artifact — refined for this chapter to a uniform ~7% speed deficit, Figure 4.) <span class="pill">resolved</span></td>
           </tr>
           <tr>
             <td><a href="../2026-06-17-release-lag-fix-validated-launch-discrepancy.md">06-17</a></td>
@@ -462,6 +537,18 @@
 </div>
 
 <script>
+  // Theme toggle (default dark; persisted).
+  (function(){
+    var tg = document.getElementById('themeToggle');
+    function icon(){ tg.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'; }
+    icon();
+    tg.addEventListener('click', function(){
+      var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('chTheme', next); icon();
+    });
+  })();
+
   // Highlight the current section in the sidebar as it scrolls into view.
   (function(){
     var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'));
