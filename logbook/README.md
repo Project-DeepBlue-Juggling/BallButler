@@ -23,6 +23,23 @@ There is no automation layer in this repo yet, so entries and the index are
 maintained **by hand**. Keep [INDEX.md](INDEX.md) in sync when you add or
 re-status an entry.
 
+## Session close
+
+Treat the end of a working session as one unit — don't let changes or red tests
+pile up across sessions. Before you stop:
+
+1. **Close the logbook entry** — set `status:` (→ `tuned`/`resolved`), fill the
+   Outcome/Verification, note anything still open, and update [INDEX.md](INDEX.md).
+2. **Run the relevant tests** — control-stack work: the Jugglebot suite
+   (`~/Desktop/Jugglebot/run_tests.sh`); firmware/tooling: the change's own
+   verification. Don't commit known-failing code without saying so.
+3. **Commit the logical unit** — `Co-Authored-By` trailer; cross-repo work gets a
+   commit in each repo.
+
+Claude should proactively *offer* to close out at natural boundaries (unit done,
+committed, and logged; context getting long; or a topic switch) rather than
+waiting to be asked.
+
 ## Entry format
 
 - **Filename:** `YYYY-MM-DD-<slug>.md` — slug is 3–6 hyphen-separated words.
