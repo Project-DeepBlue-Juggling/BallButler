@@ -21,6 +21,45 @@
 #include "Proprioception.h"
 #include "Trajectory.h"  // For TrajCfg::HAND_MAX_SMOOTH_POS, makeSmoothMove()
 #include <stdarg.h>
+#include <math.h>        // sqrtf, fabsf, INFINITY — axis settle estimators
+
+// --------------------------------------------------------------------
+// Axis traverse-time estimators (Layer A — used by requestThrow's settle gate)
+// Closed-form pitch trap-traj (asymmetric accel/decel) + conservative constant
+// yaw rate. Return INFINITY on bad inputs so the gate rejects defensively.
+// --------------------------------------------------------------------
+namespace {
+
+float estimatePitchTraverseTimeUs(float current_deg, float target_deg,
+                                  const PitchAxis::Traj& traj) {
+  const float v_max = traj.vel_limit_rps;
+  const float a_acc = traj.accel_rps2;
+  const float a_dec = traj.decel_rps2;
+  if (!(v_max > 0.0f && a_acc > 0.0f && a_dec > 0.0f)) return INFINITY;
+  const float dtheta_rev = fabsf(target_deg - current_deg) * (1.0f / 360.0f);
+  if (dtheta_rev <= 0.0f) return 0.0f;
+  const float v_peak = sqrtf(2.0f * dtheta_rev / (1.0f / a_acc + 1.0f / a_dec));
+  float t_s;
+  if (v_peak <= v_max) {
+    t_s = v_peak / a_acc + v_peak / a_dec;            // triangular
+  } else {
+    const float t_acc = v_max / a_acc;
+    const float t_dec = v_max / a_dec;
+    const float d_acc = 0.5f * v_max * v_max / a_acc;
+    const float d_dec = 0.5f * v_max * v_max / a_dec;
+    const float d_cruise = dtheta_rev - d_acc - d_dec;
+    t_s = t_acc + d_cruise / v_max + t_dec;            // trapezoidal
+  }
+  return t_s * 1e6f;
+}
+
+float estimateYawTraverseTimeUs(float current_deg, float target_deg) {
+  const float rate_dps = AxisSettleCfg::YAW_TRAVERSE_DEG_PER_S;
+  if (!(rate_dps > 0.0f)) return INFINITY;
+  return (fabsf(target_deg - current_deg) / rate_dps) * 1e6f;
+}
+
+}  // namespace
 
 // --------------------------------------------------------------------
 // State name strings
@@ -348,6 +387,14 @@ void StateMachine::handleTracking_() {
 void StateMachine::handleThrowing_() {
   // Check if throw is complete (streamer finished)
   if (!streamer_.isActive()) {
+    // Layer C: the streamer aborted before any hand motion (axes not settled at
+    // fire time). The ball was never released — retain it and return to IDLE
+    // rather than running the reload sequence.
+    if (streamer_.wasAborted()) {
+      debugf_("[SM] Throw aborted (axes not settled at fire) — ball retained, returning to IDLE\n");
+      enterState_(RobotState::IDLE);
+      return;
+    }
     if (!throw_complete_) {
       throw_complete_ = true;
       sub_state_ms_ = millis();  // Start post-throw delay timer
@@ -688,6 +735,32 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
     return false;
   }
 
+  // Layer A: predictive settle-BEFORE-wind-up gate (synchronous reject).
+  // Predict how long pitch+yaw need to reach the commanded aim and require the
+  // available lead to cover that PLUS the hand wind-up PLUS the schedule margin,
+  // so the platform is fully settled before the hand starts moving. Layer C (in
+  // the streamer) confirms this with the encoders at fire time.
+  {
+    const float pitch_settle_us = estimatePitchTraverseTimeUs(
+        PRO.getPitchDeg(), pitch_deg, pitch_.getTraj());
+    const float yaw_settle_us = estimateYawTraverseTimeUs(
+        PRO.getYawDeg(), yaw_deg);
+    const float required_lead_us = fmaxf(pitch_settle_us, yaw_settle_us)
+                                 + AxisSettleCfg::WINDUP_DURATION_S * 1e6f
+                                 + OpCfg::SCHEDULE_MARGIN_S * 1e6f;
+    const int64_t actual_lead_us =
+        (int64_t)throw_wall_us - (int64_t)can_.wallTimeUs();
+    if ((float)actual_lead_us < required_lead_us) {
+      debugf_("[SM] Throw rejected: axes can't settle before wind-up — "
+              "need %.0f ms, have %.0f ms (pitch=%.0f, yaw=%.0f)\n",
+              (double)(required_lead_us / 1000.0f),
+              (double)(actual_lead_us / 1000.0f),
+              (double)(pitch_settle_us / 1000.0f),
+              (double)(yaw_settle_us / 1000.0f));
+      return false;
+    }
+  }
+
   // Store pending throw parameters
   throw_pending_ = true;
   pending_yaw_deg_ = yaw_deg;
@@ -891,7 +964,9 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
   const float lead_ms = (float)((int64_t)throw_wall_us - (int64_t)can_.wallTimeUs()) / 1000.0f;
 
   bool ok = streamer_.arm(config_.hand_node_id, traj_buffer_,
-                          traj_count_, throw_wall_us);
+                          traj_count_, throw_wall_us,
+                          /*require_settled=*/true, &yaw_, config_.pitch_node_id,
+                          AxisSettleCfg::YAW_ERR_TOL_DEG, AxisSettleCfg::YAW_RATE_TOL_DPS);
 
   debugf_("[SM] Throw armed: frames=%u, ready_time=%.2f s, lead=%.1f ms, %s\n",
           (unsigned)traj_count_, planner_.lastTimeToReadyS(),

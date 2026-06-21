@@ -61,6 +61,9 @@ public:
   // Update trajectory limits at runtime (rps, rps^2).
   bool setTrajLimits(float vel_rps, float acc_rps2, float dec_rps2);
 
+  // Read currently-applied trajectory limits (Layer A predictive timing).
+  const Traj& getTraj() const { return traj_; }
+
   // Change basic gains if you like (pass-through to ODrive CAN)
   bool setGains(float kp_pos, float kv_vel, float ki_vel);
 

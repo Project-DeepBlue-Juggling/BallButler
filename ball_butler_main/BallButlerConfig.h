@@ -283,6 +283,31 @@ namespace OpCfg {
 }
 
 // ============================================================================
+// 12b. Axis-Settled Gate (Layers A + C) — firmware-local, not codegen-sourced.
+//      Tune here. See logbook 2026-06-19 (loud + on-aim throw gates).
+// ============================================================================
+namespace AxisSettleCfg {
+  // Layer A (predictive, in requestThrow): conservative worst-case yaw traverse
+  // rate to predict, at queue time, whether yaw will reach its target before the
+  // hand wind-up begins. Lower = more conservative (rejects shorter-lead throws).
+  // Yaw is PWM/PID with no clean v_max/accel pair; 60 deg/s is well below the
+  // glitch threshold and biased toward safe-rejection. Raise if it over-rejects.
+  constexpr float YAW_TRAVERSE_DEG_PER_S = 60.0f;
+
+  // Hand wind-up duration reserved by Layer A: the axes must be settled BEFORE
+  // the wind-up begins, so the predicted settle must fit in (lead - WINDUP -
+  // margin). requestThrow runs pre-plan and can't read the trajectory's actual
+  // wind-up, so this is a fixed conservative figure (operator-measured ~0.6 s).
+  constexpr float WINDUP_DURATION_S = 0.6f;
+
+  // Layer C (confirm, in the streamer at fire time): yaw is "settled" when its
+  // angle error AND rate are both within these bounds. Pitch settle uses the
+  // ODrive trap-traj `trajectory_done` flag (no tolerance needed).
+  constexpr float YAW_ERR_TOL_DEG  = 1.0f;
+  constexpr float YAW_RATE_TOL_DPS = 3.0f;
+}
+
+// ============================================================================
 // 13. Heartbeat Encoding — sourced from hardware_config.h (BBHb)
 //     Shared resolutions from protocol_config.h (HeartbeatEncoding).
 // ============================================================================
