@@ -2,7 +2,7 @@
 title: Release-lag fix validated on hardware; residual δ is a +3° steeper / +10% hot launch
 type: investigation
 date: 2026-06-17
-status: resolved   # 2026-06-18 — see resolution note below
+status: resolved   # 2026-06-18 — see resolution note below; 2026-06-21 — amended (launch is ~7-8% slow, not hot)
 related_entries:
   - 2026-06-11-release-lag-firmware-analysis
   - 2026-06-12-temporal-warmup-drift
@@ -41,6 +41,22 @@ tags:
 > measured release-latency offset (temporal) → **arrival error < 10 ms**. All six open
 > questions below were investigated there (kinematic-ID and feedforward root-fixes were
 > dead ends; the pragmatic temporal offset won).
+
+> **AMENDED 2026-06-21** — refining *both* this entry's headline and the 06-18 note above.
+> A fresh trajectory + hand-encoder re-analysis (chapter
+> [01 · V0 Throw Accuracy](chapters/01-v0-throw-accuracy.html), Figures 4–6) finds the launch
+> is **~7–8 % slow at the commanded angle** — *neither* "+3° steeper / +10 % hot" (this entry)
+> *nor* exactly "execution as-commanded" (06-18). Two anchor-clean facts settle it: (1) the
+> mocap arc's **curvature** fixes horizontal launch speed at **vh ≈ 0.93 × commanded**
+> (anchor-free — needs no release-time/position assumption) ⇒ narrower arc ⇒ slower
+> horizontally; (2) the **hand encoder** shows the hand peaks at **97.7 % of commanded** (a ball
+> cannot leave faster than the hand ⇒ **not hot**) and the **barrel angle = commanded** (⇒ **not
+> steeper**). The deficit decomposes as ≈2.3 % servo under-track + ≈5.5 % hand→ball (uncalibrated
+> spool radius / release transfer). The "+3°/hot" was an artifact of evaluating mocap **vz 44 ms
+> before the ball releases** (gravity not yet applied) — only horizontal speed is anchor-free.
+> It is compensated end-to-end (`aim_correction` + the 44 ms offset), so it is a **low-priority**
+> open item; the root lever is `BBTraj::LINEAR_GAIN_FACTOR` (still 1.0, never calibrated). Tools:
+> `plot_launch_geometry.py`, `plot_speed_chain.py`, `plot_0617_chain.py`.
 
 ## Summary
 

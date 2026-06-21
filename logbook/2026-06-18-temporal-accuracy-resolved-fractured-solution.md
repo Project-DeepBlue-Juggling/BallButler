@@ -2,7 +2,7 @@
 title: "Temporal accuracy resolved (≈44 ms late → <10 ms): aim-correction for space + a measured release-latency offset for time; kinematic-ID and feedforward root-fixes ruled out"
 type: investigation
 date: 2026-06-18
-status: resolved
+status: resolved   # 2026-06-21 — amended (launch is ~7-8% slow at the commanded angle; "as-commanded" is the hand, not the ball); see top banner
 phase: "V0 throw accuracy — temporal validation"
 related_entries:
   - 2026-06-17-release-lag-fix-validated-launch-discrepancy
@@ -37,6 +37,19 @@ tags:
 ---
 
 # Temporal accuracy resolved (≈44 ms late → <10 ms): a fractured spatial+temporal solution
+
+> **AMENDED 2026-06-21** — refining this entry's "execution essentially as-commanded." A fresh
+> trajectory + hand-encoder re-analysis (chapter
+> [01 · V0 Throw Accuracy](chapters/01-v0-throw-accuracy.html), Figures 4–6) localises the launch
+> along **commanded → hand → ball**: the *hand* reaches **97.7 % of commanded** (≈ as-commanded,
+> as Thread 2 says), but the *ball* leaves at **~92 %** — a real **~7–8 % launch-speed deficit at
+> the commanded angle** (≈2.3 % servo under-track + ≈5.5 % hand→ball, an uncalibrated
+> spool-radius / release-transfer term). So "as-commanded" holds for the **hand**, not the
+> **ball**. The "+3°/hot" retraction in §Summary stands (the mocap arc is *narrower*: vh ≈ 0.93 ×
+> commanded, anchor-free; and a ball cannot leave faster than the hand ⇒ not hot). Still fully
+> **compensated** by `aim_correction` (spatial) + the 44 ms offset (temporal), so **low-priority**;
+> the root lever is `BBTraj::LINEAR_GAIN_FACTOR` (1.0, never calibrated). Refines §Summary and
+> Thread 2.
 
 ## Summary
 
