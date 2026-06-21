@@ -27,6 +27,14 @@ tags:
 
 # Axis-settled lead-time gate in `executeThrow_`
 
+> **Superseded (2026-06-21)** by
+> [throw-settle-gates-loud-on-aim](2026-06-21-throw-settle-gates-loud-on-aim.md).
+> That work keeps this predictor but (a) relocates it into `requestThrow` so the
+> reject is *synchronous/loud*, (b) changes the rule from settle-by-**release** to
+> settle-before-**wind-up**, and (c) adds a fire-time encoder confirm (Layer C).
+> The symptom/diagnosis/kinematics below remain accurate; the *placement and
+> acceptance rule* are what changed. Kept for history.
+
 ## Symptom
 
 Operator reported on hardware: *"BB tends to throw very early; the pitch and
