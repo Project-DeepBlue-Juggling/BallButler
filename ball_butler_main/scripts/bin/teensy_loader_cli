@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# teensy_loader_cli — branch-local wrapper that makes `pio run -t upload` work
+# on the Jetson AND keeps it safe against the two-device hazard.
+#
+# Two problems with stock `pio run -t upload` (upload_protocol = teensy-cli) here:
+#   1. PIO resolves `teensy_loader_cli` from PATH and finds the system
+#      /usr/bin/teensy_loader_cli, which is too old (max TEENSY36) and rejects
+#      the Teensy-4.x MCU `imxrt1062`. The working loader is the standalone
+#      /home/jetson/bin/teensy_loader_cli (supports imxrt1062), but it is NOT on
+#      PATH. The bundled tool-teensy ships no teensy_loader_cli at all.
+#   2. PIO's UPLOADERFLAGS include `-s` (soft-reboot the FIRST Teensy serial
+#      device). With more than one Teensy on USB that soft-reboots whichever
+#      enumerates first — this is how the cone once got flashed with the bridge
+#      image (see logbook / memory: teensy-flashing-two-device-hazard).
+#
+# This wrapper:
+#   * drops `-s`,
+#   * reboots ONLY the Ball Butler Teensy (USB serial BB_SERIAL) into HalfKay via
+#     a 134-baud touch on its own port (falls back to the sole Teensy if exactly
+#     one is attached),
+#   * delegates to the working loader with the remaining args (incl. `-w`, which
+#     then just waits for the bootloader the touch produced).
+#
+# Made discoverable ahead of /usr/bin by fix_teensy_size_glibc.py's PATH prepend.
+# Needs python3 + pyserial (already used for manual flashing).
+
+REAL=/home/jetson/bin/teensy_loader_cli
+BB_SERIAL=15970570            # Ball Butler Teensy 4.0 USB serial (this bench)
+
+# Rebuild the arg list without the hazardous -s. (Build paths have no spaces.)
+args=""
+for a in "$@"; do
+  case "$a" in
+    -s) ;;                     # drop: we do our own targeted reboot
+    *)  args="$args $a" ;;
+  esac
+done
+
+# Locate BB's /dev/ttyACM* by USB serial; collect all Teensys (VID 16c0) too.
+bb_port=""
+teensy_ports=""
+for p in /dev/ttyACM*; do
+  [ -e "$p" ] || continue
+  ser=$(udevadm info -q property -n "$p" 2>/dev/null | sed -n 's/^ID_SERIAL_SHORT=//p')
+  vid=$(udevadm info -q property -n "$p" 2>/dev/null | sed -n 's/^ID_VENDOR_ID=//p')
+  [ "$vid" = "16c0" ] && teensy_ports="$teensy_ports $p"
+  [ "$ser" = "$BB_SERIAL" ] && bb_port="$p"
+done
+
+if [ -z "$bb_port" ]; then
+  # fall back to the only Teensy if exactly one is attached
+  set -- $teensy_ports
+  [ "$#" -eq 1 ] && bb_port="$1"
+fi
+
+if [ -n "$bb_port" ]; then
+  echo "[teensy_loader_cli wrapper] rebooting BB into HalfKay via 134-baud touch on $bb_port"
+  python3 -c "import serial; serial.Serial('$bb_port',134).close()" 2>/dev/null \
+    || echo "[teensy_loader_cli wrapper] 134-baud touch failed (firmware hung? press the BB button)"
+else
+  echo "[teensy_loader_cli wrapper] BB (serial $BB_SERIAL) not found on USB — relying on -w + manual button"
+fi
+
+echo "[teensy_loader_cli wrapper] exec $REAL$args"
+# shellcheck disable=SC2086  (intentional word-split; build paths are space-free)
+exec "$REAL" $args
