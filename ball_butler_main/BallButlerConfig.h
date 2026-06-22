@@ -305,6 +305,11 @@ namespace AxisSettleCfg {
   // ODrive trap-traj `trajectory_done` flag (no tolerance needed).
   constexpr float YAW_ERR_TOL_DEG  = 1.0f;
   constexpr float YAW_RATE_TOL_DPS = 3.0f;
+
+  // Layer A re-engage reserve: extra lead required when pitch isn't already
+  // CLOSED_LOOP + settled at queue time. DORMANT (0.0) until sized from the
+  // measured re-engage latency — see logbook 2026-06-21.
+  constexpr float PITCH_REENGAGE_RESERVE_S = 0.0f;
 }
 
 // ============================================================================

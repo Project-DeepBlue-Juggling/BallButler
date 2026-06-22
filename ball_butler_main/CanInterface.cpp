@@ -391,6 +391,13 @@ uint64_t CanInterface::axisPVMonoAgeUs(uint32_t node_id) const {
   return (now >= m) ? (now - m) : 0;   // monotonic: never underflows
 }
 
+uint64_t CanInterface::axisHeartbeatMonoAgeUs(uint32_t node_id) const {
+  if (node_id >= MAX_NODES || !hb_[node_id].valid) return UINT64_MAX;
+  const uint64_t m = hb_[node_id].mono_us;
+  const uint64_t now = micros64();
+  return (now >= m) ? (now - m) : 0;   // monotonic: never underflows
+}
+
 bool CanInterface::getAxisIq(uint32_t node_id, float& iq_meas_out, float& iq_setp_out, uint64_t& wall_us_out) const {
   if (node_id >= MAX_NODES) return false;
   uint64_t t1, t2;
@@ -929,6 +936,7 @@ void CanInterface::handleRx_(const CAN_message_t& msg) {
     hb_[node].procedure_result = msg.buf[5];
     hb_[node].trajectory_done = msg.buf[6];
     hb_[node].wall_us = wallTimeUs();
+    hb_[node].mono_us = micros64();
     hb_[node].valid = true;
 
     if (auto_clear_brake_res_ && (axis_error & ODriveErrors::BRAKE_RESISTOR_DISARMED)) {

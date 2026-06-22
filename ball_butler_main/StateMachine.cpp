@@ -735,6 +735,15 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
     return false;
   }
 
+  // Pitch readiness snapshot (Layer A re-engage reserve + diagnostics).
+  CanInterface::AxisHeartbeat hb_p;
+  const bool pitch_hb_ok = can_.getAxisHeartbeat(config_.pitch_node_id, hb_p);
+  const bool pitch_ready = pitch_hb_ok &&
+                           hb_p.axis_state == ODriveState::CLOSED_LOOP &&
+                           hb_p.trajectory_done;
+  const unsigned long pitch_hb_age_ms =
+      (unsigned long)(can_.axisHeartbeatMonoAgeUs(config_.pitch_node_id) / 1000ULL);
+
   // Layer A: predictive settle-BEFORE-wind-up gate (synchronous reject).
   // Predict how long pitch+yaw need to reach the commanded aim and require the
   // available lead to cover that PLUS the hand wind-up PLUS the schedule margin,
@@ -745,21 +754,34 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
         PRO.getPitchDeg(), pitch_deg, pitch_.getTraj());
     const float yaw_settle_us = estimateYawTraverseTimeUs(
         PRO.getYawDeg(), yaw_deg);
+    // Reserve extra lead for pitch re-engagement when it isn't already
+    // CLOSED_LOOP + settled (DORMANT: 0 until sized from measurement).
+    const float reengage_us = pitch_ready ? 0.0f
+                            : AxisSettleCfg::PITCH_REENGAGE_RESERVE_S * 1e6f;
     const float required_lead_us = fmaxf(pitch_settle_us, yaw_settle_us)
+                                 + reengage_us
                                  + AxisSettleCfg::WINDUP_DURATION_S * 1e6f
                                  + OpCfg::SCHEDULE_MARGIN_S * 1e6f;
     const int64_t actual_lead_us =
         (int64_t)throw_wall_us - (int64_t)can_.wallTimeUs();
     if ((float)actual_lead_us < required_lead_us) {
       debugf_("[SM] Throw rejected: axes can't settle before wind-up — "
-              "need %.0f ms, have %.0f ms (pitch=%.0f, yaw=%.0f)\n",
+              "need %.0f ms, have %.0f ms (pitch=%.0f, yaw=%.0f, reengage=%.0f)\n",
               (double)(required_lead_us / 1000.0f),
               (double)(actual_lead_us / 1000.0f),
               (double)(pitch_settle_us / 1000.0f),
-              (double)(yaw_settle_us / 1000.0f));
+              (double)(yaw_settle_us / 1000.0f),
+              (double)(reengage_us / 1000.0f));
       return false;
     }
   }
+
+  // Diagnostic: pitch readiness at queue time — settles the "did pitch idle?"
+  // question (logbook 2026-06-21). axis_state 8 = CLOSED_LOOP, 1 = IDLE.
+  debugf_("[SM] Throw queue diag: pitch_state=%lu traj_done=%d hb_age=%lu ms "
+          "pitch_cur=%.1f° tgt=%.1f°\n",
+          (unsigned long)hb_p.axis_state, (int)hb_p.trajectory_done,
+          pitch_hb_age_ms, (double)PRO.getPitchDeg(), (double)pitch_deg);
 
   // Store pending throw parameters
   throw_pending_ = true;
@@ -767,6 +789,11 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
   pending_pitch_deg_ = pitch_deg;
   pending_speed_mps_ = speed_mps;
   pending_throw_wall_us_ = throw_wall_us;
+
+  // Pre-engage: command the axes toward the aim now so CLOSED_LOOP engagement +
+  // slew start at the earliest moment (executeThrow_ re-commands idempotently).
+  pitch_.setTargetDeg(pitch_deg);
+  yaw_.setTargetDeg(yaw_deg);
 
   const float lead_ms = (float)((int64_t)throw_wall_us - (int64_t)can_.wallTimeUs()) / 1000.0f;
   debugf_("[SM] Throw queued: yaw=%.1f° pitch=%.1f° speed=%.2f m/s at wall+%.0f ms\n",

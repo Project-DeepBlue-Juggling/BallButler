@@ -131,6 +131,7 @@ public:
     uint8_t  procedure_result = 0;
     uint8_t  trajectory_done = 0;
     uint64_t wall_us = 0;
+    uint64_t mono_us = 0;   // monotonic stamp for sync-immune freshness
     bool     valid = false;
   };
 
@@ -213,6 +214,9 @@ public:
   // Monotonic age (us) since the last encoder estimate — sync-immune freshness.
   // Returns UINT64_MAX if the axis has no valid PV yet.
   uint64_t axisPVMonoAgeUs(uint32_t node_id) const;
+  // Monotonic age (us) since the last axis heartbeat — sync-immune freshness
+  // for axis_state / trajectory_done. UINT64_MAX if no heartbeat yet.
+  uint64_t axisHeartbeatMonoAgeUs(uint32_t node_id) const;
   bool getAxisIq(uint32_t node_id, float& iq_meas_out, float& iq_setpoint_out, uint64_t& wall_us_out) const;
   bool getAxisHeartbeat(uint32_t node_id, AxisHeartbeat& out) const;
   bool hasAxisError(uint32_t node_id, uint32_t mask) const;

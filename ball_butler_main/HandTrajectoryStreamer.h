@@ -77,7 +77,10 @@ struct HandTrajectoryStreamer {
       if (require_settled_) {
         require_settled_ = false;  // one-shot regardless of outcome
         CanInterface::AxisHeartbeat hb;
-        const bool pitch_done = can.getAxisHeartbeat(pitch_node_, hb) && hb.trajectory_done;
+        const bool have_hb = can.getAxisHeartbeat(pitch_node_, hb);
+        const unsigned long hb_age_ms =
+            (unsigned long)(can.axisHeartbeatMonoAgeUs(pitch_node_) / 1000ULL);
+        const bool pitch_done = have_hb && hb.trajectory_done;
         YawAxis::Telemetry yt = yaw_ ? yaw_->readTelemetry() : YawAxis::Telemetry{};
         const float yaw_rate_dps = yt.vel_rps * 360.0f;
         const bool yaw_ok = (yaw_ != nullptr) &&
@@ -85,14 +88,19 @@ struct HandTrajectoryStreamer {
                             fabsf(yaw_rate_dps) <= yaw_rate_tol_;
         if (!(pitch_done && yaw_ok)) {
           if (Serial) Serial.printf(
-              "[Gate] Throw ABORTED (axes not settled): pitch_done=%d yaw_err=%.2f deg "
-              "yaw_rate=%.1f deg/s (tol %.1f deg, %.1f deg/s)\n",
-              (int)pitch_done, (double)yt.err_deg, (double)yaw_rate_dps,
+              "[Gate] Throw ABORTED (not settled): pitch_state=%lu (CL=8) pitch_done=%d "
+              "hb_age=%lu ms  yaw_err=%.2f yaw_rate=%.1f (tol %.1f, %.1f)\n",
+              (unsigned long)hb.axis_state, (int)pitch_done, hb_age_ms,
+              (double)yt.err_deg, (double)yaw_rate_dps,
               (double)yaw_err_tol_, (double)yaw_rate_tol_);
           aborted_ = true;
           active = false;
           return;  // send NO frames — hand stays at rest, ball retained
         }
+        // Diagnostic: confirm what "settled" looked like at fire (logbook 2026-06-21).
+        if (Serial) Serial.printf(
+            "[Gate] settled-confirm OK: pitch_state=%lu hb_age=%lu ms yaw_err=%.2f yaw_rate=%.1f\n",
+            (unsigned long)hb.axis_state, hb_age_ms, (double)yt.err_deg, (double)yaw_rate_dps);
       }
 
       (void)can.sendInputPos(node, frames[idx].pos_cmd, frames[idx].vel_ff, frames[idx].tor_ff);
