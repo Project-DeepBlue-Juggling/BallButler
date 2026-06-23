@@ -19,7 +19,7 @@ entries, which stay authoritative. Open the `.html` in a browser.
 
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
-| 2026-06-21 | in-progress | feature | firmware, throwing | Throw settle-gates — loud + guaranteed-on-aim throws (A predictive / B loud channel / C fire-time confirm); Phase 1 = A+C+serial | [throw-settle-gates-loud-on-aim](2026-06-21-throw-settle-gates-loud-on-aim.md) |
+| 2026-06-21 | tuned | feature | firmware, throwing | Throw settle-gates — loud + guaranteed-on-aim throws; Phase 1 (A predictive + C fire-time confirm + serial) hardware-validated; Phase 2 (loud-to-host channel) deferred | [throw-settle-gates-loud-on-aim](2026-06-21-throw-settle-gates-loud-on-aim.md) |
 | 2026-06-18 | resolved | investigation | throwing, firmware, calibration, timing | Temporal accuracy resolved (≈44 ms → <10 ms): aim-correction (spatial) + measured release-latency offset (temporal); kinematic-ID & feedforward root-fixes ruled out | [temporal-accuracy-resolved-fractured-solution](2026-06-18-temporal-accuracy-resolved-fractured-solution.md) |
 | 2026-06-17 | resolved | investigation | throwing, firmware, calibration | Release-lag fix validated on hardware (δ 140→44 ms); residual is a +3° steeper / +10% hot launch | [release-lag-fix-validated-launch-discrepancy](2026-06-17-release-lag-fix-validated-launch-discrepancy.md) |
 | 2026-06-12 | resolved | investigation | throwing, timing, firmware | Temporal "warm-up drift" is a clock-sync artifact (bridge time-master re-acquisition slew), not a thrower effect — root-caused + fixed (2026-06-16) | [temporal-warmup-drift](2026-06-12-temporal-warmup-drift.md) |
