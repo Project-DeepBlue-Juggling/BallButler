@@ -87,10 +87,13 @@ struct HandTrajectoryStreamer {
                             fabsf(yt.err_deg) <= yaw_err_tol_ &&
                             fabsf(yaw_rate_dps) <= yaw_rate_tol_;
         if (!(pitch_done && yaw_ok)) {
+          const char* who = (!pitch_done && !yaw_ok) ? "PITCH+YAW"
+                          : (!pitch_done ? "PITCH" : "YAW");
           if (Serial) Serial.printf(
-              "[Gate] Throw ABORTED (not settled): pitch_state=%lu (CL=8) pitch_done=%d "
-              "hb_age=%lu ms  yaw_err=%.2f yaw_rate=%.1f (tol %.1f, %.1f)\n",
-              (unsigned long)hb.axis_state, (int)pitch_done, hb_age_ms,
+              "[Gate] Throw ABORTED — %s not settled: pitch_state=%lu err=0x%lx done=%d "
+              "hb_age=%lu ms | yaw_err=%.2f rate=%.1f (tol %.1f,%.1f)\n",
+              who, (unsigned long)hb.axis_state, (unsigned long)hb.axis_error,
+              (int)pitch_done, hb_age_ms,
               (double)yt.err_deg, (double)yaw_rate_dps,
               (double)yaw_err_tol_, (double)yaw_rate_tol_);
           aborted_ = true;

@@ -2,27 +2,32 @@
 """
 validate_settle_gates.py — drive the Phase-1 axis-settle-gate validation.
 
-Sends a short, safe sequence of throw / tracking commands to BB via
-`/bb/send_throw_command` to exercise Layer A (predictive settle-before-wind-up
-gate). Watch `pio device monitor` on BB's serial for the `[SM]` / `[Gate]` lines
-— THOSE are the ground truth. The ROS service response only tells you the
-command was *delivered* (success=True) or had bad args (success=False); the
-actual accept/reject is decided in BB firmware and printed on its serial.
+Sends a short, safe sequence to BB via `/bb/send_throw_command` to exercise
+Layer A (predictive settle-before-wind-up gate). Watch `pio device monitor` on
+BB's serial for the `[SM]` / `[Gate]` lines — THOSE are the ground truth. The
+ROS service response only tells you the command was *delivered* (success=True)
+or had bad args (success=False); the accept/reject is decided in BB firmware and
+printed on its serial.
+
+IMPORTANT — track-hold, not single-park:
+  The first hardware run aborted "good" throws because a single park command +
+  a 5 s wait let BB's tracking time out -> pitch dropped to IDLE and drifted to
+  the ~90 deg stow/home position before the throw. In production the throw
+  director tracks CONTINUOUSLY, so pitch stays engaged on-aim. This script now
+  mimics that: track_hold() sends repeated tracking commands (speed=0) so pitch
+  reaches the pose AND stays in CLOSED_LOOP, then the throw fires immediately
+  (within the tracking timeout) -> pitch is engaged + on-aim, the real test.
 
 Safety:
-  * Every armed throw is capped so its apex stays < 0.5 m above the launch point
-    (throw_speed 2.0 m/s -> apex <= ~0.20 m at any pitch). The script refuses any
-    throw it computes as exceeding the ceiling.
-  * Make sure the area in front of BB is clear — armed throws DO release a ball.
-  * Reject cases do NOT throw (Layer A rejects in requestThrow before the axes
-    even move), so they leave the platform where it is and are safe to repeat.
+  * Armed throws are apex-capped < 0.5 m above the launch point (speed 2.0 m/s
+    -> apex <= ~0.20 m at any pitch). The script refuses anything that exceeds it.
+  * Keep the area in front of BB clear — armed throws release a ball.
+  * Reject cases do NOT throw (Layer A rejects before the axes move).
 
-Pre-reqs (the script can't check these — confirm yourself):
-  * ROS2 network up; `ros2 service list` shows /bb/send_throw_command.
-  * BB `status` shows `TimeSync: YES` (else throws reject with
-    "time sync not established"), `Ball: YES`, and `Hand homed: YES`.
+Pre-reqs (confirm yourself): ROS2 up; BB `status` shows TimeSync: YES, Ball: YES,
+Hand homed: YES.
 
-Usage:  python3 validate_settle_gates.py        (run with the venv/ROS sourced)
+Usage:  python3 validate_settle_gates.py     (run with the venv/ROS sourced)
 """
 import math
 import re
@@ -35,62 +40,58 @@ CEILING_M = 0.5
 SERVICE = "/bb/send_throw_command"
 SRV_TYPE = "jugglebot_interfaces/srv/SendBallButlerCommand"
 
-THROW_SPEED = 2.0   # m/s — apex <= ~0.20 m at any pitch (within the 0.5 m ceiling)
-RELOAD_S = 6.0      # wait after an armed throw, for the reload cycle
-PARK_SETTLE_S = 5.0 # wait after a tracking/park command, for the platform to settle
+THROW_SPEED = 2.0     # m/s — apex <= ~0.20 m at any pitch (within the 0.5 m ceiling)
+RELOAD_S = 6.0        # wait after an armed throw, for the reload cycle
+TRACK_CMDS = 3        # tracking commands per track-hold (keeps pitch engaged)
+TRACK_GAP_S = 1.5     # spacing between tracking commands (< 5 s tracking timeout)
 
 
 def apex_m(speed_mps, pitch_deg):
-    """Apex height above the launch point for a given launch speed/elevation."""
     return (speed_mps * math.sin(math.radians(pitch_deg))) ** 2 / (2.0 * G)
 
 
-def send(yaw_deg, pitch_deg, speed, throw_time, label, expect):
-    armed = speed > 0.0
-    if armed:
-        a = apex_m(speed, pitch_deg)
-        if a > CEILING_M:
-            print("\n=== %s ===" % label)
-            print("  !! SKIPPED — predicted apex %.2f m exceeds the %.1f m ceiling" % (a, CEILING_M))
-            return False
-
+def _call(yaw_deg, pitch_deg, speed, throw_time):
     req = ("{yaw_angle_rad: %.5f, pitch_angle_rad: %.5f, throw_speed: %.3f, "
            "throw_time: %.3f, suppress_announcement: false}" %
            (math.radians(yaw_deg), math.radians(pitch_deg), speed, throw_time))
-
-    print("\n=== %s ===" % label)
-    if armed:
-        print("  cmd: yaw=%g deg  pitch=%g deg  speed=%.1f m/s  lead=%.1fs  (apex~%.2f m)"
-              % (yaw_deg, pitch_deg, speed, throw_time, apex_m(speed, pitch_deg)))
-    else:
-        print("  cmd: yaw=%g deg  pitch=%g deg  (TRACK/park, no throw)" % (yaw_deg, pitch_deg))
-    print("  EXPECT on BB serial: %s" % expect)
-
     try:
         out = subprocess.run(["ros2", "service", "call", SERVICE, SRV_TYPE, req],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              universal_newlines=True, timeout=25)
-        txt = out.stdout or ""
+        return out.stdout or ""
     except Exception as e:  # noqa: BLE001
-        print("  service call FAILED to run: %s" % e)
-        return False
+        return "EXC:%s" % e
 
+
+def track_hold(yaw_deg, pitch_deg):
+    """Hold the platform on-aim with repeated tracking (speed=0) commands so
+    pitch slews there AND stays in CLOSED_LOOP. The throw must follow promptly."""
+    print("\n--- TRACK-HOLD -> yaw=%g deg pitch=%g deg (keeping pitch engaged) ---"
+          % (yaw_deg, pitch_deg))
+    for i in range(TRACK_CMDS):
+        txt = _call(yaw_deg, pitch_deg, 0.0, 0.0)
+        ok = "success=True" in txt
+        print("  track %d/%d: %s" % (i + 1, TRACK_CMDS, "ok" if ok else "FAILED"))
+        if i < TRACK_CMDS - 1:
+            time.sleep(TRACK_GAP_S)
+
+
+def throw(yaw_deg, pitch_deg, throw_time, label, expect):
+    a = apex_m(THROW_SPEED, pitch_deg)
+    print("\n=== %s ===" % label)
+    if a > CEILING_M:
+        print("  !! SKIPPED — predicted apex %.2f m exceeds the %.1f m ceiling" % (a, CEILING_M))
+        return
+    print("  throw: yaw=%g deg pitch=%g deg speed=%.1f m/s lead=%.1fs (apex~%.2f m)"
+          % (yaw_deg, pitch_deg, THROW_SPEED, throw_time, a))
+    print("  EXPECT on BB serial: %s" % expect)
+    txt = _call(yaw_deg, pitch_deg, THROW_SPEED, throw_time)
     ok = "success=True" in txt
     m = re.search(r"message=['\"](.*?)['\"]", txt)
-    msg = m.group(1) if m else ""
-    print("  service: %s%s" % ("delivered (success=True)" if ok else "NOT delivered (success=False)",
-                               (" — %s" % msg) if msg else ""))
+    print("  service: %s%s" % ("delivered" if ok else "NOT delivered",
+                               (" — %s" % m.group(1)) if m else ""))
     if not ok and "ERR_BAD_ARGS" in txt:
-        print("  (bad args — ranges: pitch 0..1.571 rad, yaw +-pi, speed 0..6.55, lead 0..65.5)")
-    return ok
-
-
-def park(yaw_deg, pitch_deg):
-    send(yaw_deg, pitch_deg, 0.0, 0.0,
-         "PARK -> yaw=%g deg pitch=%g deg" % (yaw_deg, pitch_deg),
-         "platform slews to the pose (tracking; no throw)")
-    print("  ... waiting %.0fs for the platform to settle" % PARK_SETTLE_S)
-    time.sleep(PARK_SETTLE_S)
+        print("  (bad args — ranges: pitch 0..1.571 rad, yaw +-pi, speed 0..6.55)")
 
 
 def wait(label, secs):
@@ -100,44 +101,41 @@ def wait(label, secs):
 
 def main():
     print(__doc__)
-    print("Layer-A requirement: lead >= max(pitch_settle, yaw_settle) + 0.6 (wind-up) + 0.1 (margin).")
-    print("  60 deg pitch ~1.41s settle; 50 deg ~1.25s; yaw 45 deg ~0.75s (60 deg/s model).\n")
+    print("Layer-A: lead >= max(pitch_settle, yaw_settle) + 0.6 (wind-up) + 0.1 (margin).\n")
     try:
-        input("Start `pio device monitor` on BB, confirm TimeSync: YES, then press Enter (Ctrl-C aborts)... ")
+        input("Start `pio device monitor` on BB, confirm TimeSync: YES, then press Enter... ")
     except EOFError:
         pass
 
-    # 1) ACCEPT — near-zero delta, comfortable lead.
-    park(0, 45)
-    send(0, 45, THROW_SPEED, 2.0, "TEST 1 — ACCEPT (delta~0, lead 2.0s)",
-         "[SM] Throw armed ...  -> BALL THROWN")
+    # 1) ACCEPT — pitch already on-aim (engaged via track-hold), comfortable lead.
+    track_hold(0, 45)
+    throw(0, 45, 2.0, "TEST 1 — ACCEPT (delta~0, lead 2.0s)",
+          "[SM] Throw queue diag: pitch_state=8 (CLOSED_LOOP) ... -> [SM] Throw armed -> BALL THROWN")
     wait("reload", RELOAD_S)
 
-    # 2) REJECT — big pitch move, short lead. No throw; platform stays at 30 deg.
-    park(0, 30)
-    send(0, 80, THROW_SPEED, 1.0, "TEST 2 — REJECT (delta-pitch 50 deg, lead 1.0s)",
-         "[SM] Throw rejected: axes can't settle before wind-up "
-         "— need ~1950 ms, have ~1000 ms   (NO throw)")
-    wait("no throw -> no reload needed", 1.5)
+    # 2) REJECT — engaged at 30 deg, command +50 deg pitch with too-short lead.
+    track_hold(0, 30)
+    throw(0, 80, 1.0, "TEST 2 — REJECT (delta-pitch 50 deg, lead 1.0s)",
+          "[SM] Throw rejected: PITCH can't settle before wind-up — need ~1950 ms, have ~1000 ms  (NO throw)")
+    wait("no throw -> no reload", 1.5)
 
-    # 3) ACCEPT — same 50 deg pitch move, generous lead (still parked at 30 deg).
-    send(0, 80, THROW_SPEED, 3.0, "TEST 3 — ACCEPT (delta-pitch 50 deg, lead 3.0s)",
-         "[SM] Throw armed ...  -> slews to 80 deg, BALL THROWN")
+    # 3) ACCEPT — same 50 deg pitch move, generous lead.
+    track_hold(0, 30)
+    throw(0, 80, 3.0, "TEST 3 — ACCEPT (delta-pitch 50 deg, lead 3.0s)",
+          "[SM] Throw armed -> slews to 80 deg, BALL THROWN")
     wait("reload", RELOAD_S)
 
-    # 4) REJECT — yaw move, short lead. Adjust the 45 deg target if it exceeds
-    #    BB's yaw soft-limits (you'd see a different rejection then).
-    park(0, 45)
-    send(45, 45, THROW_SPEED, 1.0, "TEST 4 — REJECT (delta-yaw 45 deg, lead 1.0s)",
-         "[SM] Throw rejected: ... yaw~750 ms -> need ~1450 ms, have ~1000 ms   (NO throw)")
+    # 4) REJECT — yaw move, short lead. Adjust 45 deg if outside BB's yaw limits.
+    track_hold(0, 45)
+    throw(45, 45, 1.0, "TEST 4 — REJECT (delta-yaw 45 deg, lead 1.0s)",
+          "[SM] Throw rejected: YAW can't settle before wind-up — need ~1450 ms, have ~1000 ms  (NO throw)")
     wait("done", 1.0)
 
     print("\n" + "=" * 70)
-    print("Compare each test's [SM]/[Gate] serial line against its EXPECT above.")
-    print("Layer-C 'pass' is proven implicitly: TEST 1 & 3 actually firing means")
-    print("the fire-time settled-confirm let them through. To exercise the C *abort*")
-    print("path, tighten AxisSettleCfg::YAW_RATE_TOL_DPS (e.g. 0.1), re-flash, and")
-    print("run TEST 1 again -> expect '[Gate] Throw ABORTED', ball retained, no fire.")
+    print("With track-hold keeping pitch engaged on-aim, TEST 1 should now ARM+THROW")
+    print("(pitch_state=8 at queue, settled-confirm OK at fire). 2 & 4 reject by axis,")
+    print("3 accepts. If TEST 1 still aborts with pitch_state=8/pitch_done=0, paste the")
+    print("[SM] queue diag + [Gate] lines — that points at re-engage latency, not idle.")
     print("=" * 70)
 
 

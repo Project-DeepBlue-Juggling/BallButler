@@ -765,8 +765,10 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
     const int64_t actual_lead_us =
         (int64_t)throw_wall_us - (int64_t)can_.wallTimeUs();
     if ((float)actual_lead_us < required_lead_us) {
-      debugf_("[SM] Throw rejected: axes can't settle before wind-up — "
+      const char* who = (pitch_settle_us >= yaw_settle_us) ? "PITCH" : "YAW";
+      debugf_("[SM] Throw rejected: %s can't settle before wind-up — "
               "need %.0f ms, have %.0f ms (pitch=%.0f, yaw=%.0f, reengage=%.0f)\n",
+              who,
               (double)(required_lead_us / 1000.0f),
               (double)(actual_lead_us / 1000.0f),
               (double)(pitch_settle_us / 1000.0f),
@@ -778,9 +780,10 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
 
   // Diagnostic: pitch readiness at queue time — settles the "did pitch idle?"
   // question (logbook 2026-06-21). axis_state 8 = CLOSED_LOOP, 1 = IDLE.
-  debugf_("[SM] Throw queue diag: pitch_state=%lu traj_done=%d hb_age=%lu ms "
+  debugf_("[SM] Throw queue diag: pitch_state=%lu err=0x%lx traj_done=%d hb_age=%lu ms "
           "pitch_cur=%.1f° tgt=%.1f°\n",
-          (unsigned long)hb_p.axis_state, (int)hb_p.trajectory_done,
+          (unsigned long)hb_p.axis_state, (unsigned long)hb_p.axis_error,
+          (int)hb_p.trajectory_done,
           pitch_hb_age_ms, (double)PRO.getPitchDeg(), (double)pitch_deg);
 
   // Store pending throw parameters
