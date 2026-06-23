@@ -77,10 +77,13 @@ struct HandTrajectoryStreamer {
       if (require_settled_) {
         require_settled_ = false;  // one-shot regardless of outcome
         CanInterface::AxisHeartbeat hb;
-        const bool have_hb = can.getAxisHeartbeat(pitch_node_, hb);
-        const unsigned long hb_age_ms =
-            (unsigned long)(can.axisHeartbeatMonoAgeUs(pitch_node_) / 1000ULL);
-        const bool pitch_done = have_hb && hb.trajectory_done;
+        const uint64_t hb_age_us = can.axisHeartbeatMonoAgeUs(pitch_node_);
+        const unsigned long hb_age_ms = (unsigned long)(hb_age_us / 1000ULL);
+        // Trust trajectory_done only from a FRESH heartbeat (sync-immune mono age),
+        // so a stalled/dropped pitch heartbeat can't confirm "settled" on stale data.
+        const bool pitch_done = can.getAxisHeartbeat(pitch_node_, hb) &&
+                                hb_age_us < AxisSettleCfg::PITCH_HB_FRESH_US &&
+                                hb.trajectory_done;
         YawAxis::Telemetry yt = yaw_ ? yaw_->readTelemetry() : YawAxis::Telemetry{};
         const float yaw_rate_dps = yt.vel_rps * 360.0f;
         const bool yaw_ok = (yaw_ != nullptr) &&
@@ -100,10 +103,6 @@ struct HandTrajectoryStreamer {
           active = false;
           return;  // send NO frames — hand stays at rest, ball retained
         }
-        // Diagnostic: confirm what "settled" looked like at fire (logbook 2026-06-21).
-        if (Serial) Serial.printf(
-            "[Gate] settled-confirm OK: pitch_state=%lu hb_age=%lu ms yaw_err=%.2f yaw_rate=%.1f\n",
-            (unsigned long)hb.axis_state, hb_age_ms, (double)yt.err_deg, (double)yaw_rate_dps);
       }
 
       (void)can.sendInputPos(node, frames[idx].pos_cmd, frames[idx].vel_ff, frames[idx].tor_ff);

@@ -310,6 +310,12 @@ namespace AxisSettleCfg {
   // CLOSED_LOOP + settled at queue time. DORMANT (0.0) until sized from the
   // measured re-engage latency — see logbook 2026-06-21.
   constexpr float PITCH_REENGAGE_RESERVE_S = 0.0f;
+
+  // Layer C: the pitch heartbeat must be fresher than this (sync-immune mono
+  // age) for `trajectory_done` to be trusted — otherwise a stalled/dropped
+  // heartbeat could confirm "settled" on stale data. Observed age is ~50-100 ms;
+  // 300 ms catches a real stall while tolerating normal jitter.
+  constexpr uint32_t PITCH_HB_FRESH_US = 300000u;
 }
 
 // ============================================================================

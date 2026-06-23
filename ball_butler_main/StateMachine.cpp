@@ -735,14 +735,12 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
     return false;
   }
 
-  // Pitch readiness snapshot (Layer A re-engage reserve + diagnostics).
+  // Pitch readiness snapshot for Layer A's re-engage reserve.
   CanInterface::AxisHeartbeat hb_p;
   const bool pitch_hb_ok = can_.getAxisHeartbeat(config_.pitch_node_id, hb_p);
   const bool pitch_ready = pitch_hb_ok &&
                            hb_p.axis_state == ODriveState::CLOSED_LOOP &&
                            hb_p.trajectory_done;
-  const unsigned long pitch_hb_age_ms =
-      (unsigned long)(can_.axisHeartbeatMonoAgeUs(config_.pitch_node_id) / 1000ULL);
 
   // Layer A: predictive settle-BEFORE-wind-up gate (synchronous reject).
   // Predict how long pitch+yaw need to reach the commanded aim and require the
@@ -778,25 +776,12 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
     }
   }
 
-  // Diagnostic: pitch readiness at queue time — settles the "did pitch idle?"
-  // question (logbook 2026-06-21). axis_state 8 = CLOSED_LOOP, 1 = IDLE.
-  debugf_("[SM] Throw queue diag: pitch_state=%lu err=0x%lx traj_done=%d hb_age=%lu ms "
-          "pitch_cur=%.1f° tgt=%.1f°\n",
-          (unsigned long)hb_p.axis_state, (unsigned long)hb_p.axis_error,
-          (int)hb_p.trajectory_done,
-          pitch_hb_age_ms, (double)PRO.getPitchDeg(), (double)pitch_deg);
-
   // Store pending throw parameters
   throw_pending_ = true;
   pending_yaw_deg_ = yaw_deg;
   pending_pitch_deg_ = pitch_deg;
   pending_speed_mps_ = speed_mps;
   pending_throw_wall_us_ = throw_wall_us;
-
-  // Pre-engage: command the axes toward the aim now so CLOSED_LOOP engagement +
-  // slew start at the earliest moment (executeThrow_ re-commands idempotently).
-  pitch_.setTargetDeg(pitch_deg);
-  yaw_.setTargetDeg(yaw_deg);
 
   const float lead_ms = (float)((int64_t)throw_wall_us - (int64_t)can_.wallTimeUs()) / 1000.0f;
   debugf_("[SM] Throw queued: yaw=%.1f° pitch=%.1f° speed=%.2f m/s at wall+%.0f ms\n",
