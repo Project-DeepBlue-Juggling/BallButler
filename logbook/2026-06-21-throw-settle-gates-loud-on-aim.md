@@ -19,7 +19,7 @@ commits:
   - 24e0906   # carry-forward teensy_reboot + 2026-05-24 entry
   - efbd8cc   # teensy_loader_cli wrapper — fixes pio run -t upload (two-device-safe)
   - 6c16b08   # name binding axis in rejects/aborts + err; track-hold validation driver
-  - "(close-out)"  # audit cleanup: strip per-throw diag, Layer-C freshness guard, drop pre-engage
+  - a8b5058   # audit cleanup: strip per-throw diag, Layer-C freshness guard, drop pre-engage
 subsystem:
   - firmware
   - throwing
