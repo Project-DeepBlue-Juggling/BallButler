@@ -2,7 +2,7 @@
 title: Throw settle-gates — loud + guaranteed-on-aim throws (A predictive / B loud channel / C fire-time confirm)
 type: feature
 date: 2026-06-21
-status: tuned   # Phase 1 (A + C + serial) hardware-validated 2026-06-23; Phase 2 (loud-to-host channel) intentionally deferred
+status: tuned   # Phase 1 (A + C + serial) hardware-validated 2026-06-23; Phase 2 (loud-to-host channel) COMPLETED 2026-06-24 — see 2026-06-23-loud-command-outcome-channel-cmd-result.md
 phase: V1 reliability
 files_changed:
   - ball_butler_main/StateMachine.cpp
@@ -142,7 +142,9 @@ feedback channel.
 
 ## Open Questions / Follow-ups
 
-- **Phase 2 (design locked, not built): generic command-outcome channel.** The
+- **Phase 2 (DONE — built + hardware-validated 2026-06-24, see
+  [2026-06-23-loud-command-outcome-channel-cmd-result.md](2026-06-23-loud-command-outcome-channel-cmd-result.md);
+  the design below is what shipped): generic command-outcome channel.** The
   throw is the first of several ops (reload, calibrate, home) that want loud
   feedback, so Phase 2 is a *reusable* mechanism, not throw-specific:
   - one generic `CMD_RESULT` CAN message — `cmd_type` + a **shared base outcome
