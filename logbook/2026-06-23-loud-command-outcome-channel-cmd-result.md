@@ -28,8 +28,8 @@ external_changes:
   - "Jugglebot: jugglebot/can_node.py (stale BB-services comment refreshed)"
   - "Jugglebot: tests/ros/{conftest.py,test_teensy_bridge_node_bb.py,test_ball_butler_node.py} + tests/teensy_link/test_protocol_codec.py (action infra mocks, service→action migration, CMD_RESULT loopback + round-trip)"
 commits:
-  - <bb>      # BallButler-side firmware + regenerated protocol_config.h
-  - <jb>      # Jugglebot-side protocol + bridge + host + tests
+  - a6b9057   # BallButler: firmware emits + regenerated protocol_config.h + validation driver
+  - 329a4b4   # Jugglebot (cross-repo): protocol + can-bridge relay + bb/throw action + tests
 subsystem:
   - firmware
   - throwing
