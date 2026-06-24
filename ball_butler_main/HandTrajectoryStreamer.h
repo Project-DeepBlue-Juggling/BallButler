@@ -99,6 +99,12 @@ struct HandTrajectoryStreamer {
               (int)pitch_done, hb_age_ms,
               (double)yt.err_deg, (double)yaw_rate_dps,
               (double)yaw_err_tol_, (double)yaw_rate_tol_);
+          // Loud channel: terminal abort outcome. detail0 = binding axis
+          // (0=YAW, 1=PITCH, 2=BOTH); detail1 = yaw error (centidegrees).
+          const int16_t axis = (!pitch_done && !yaw_ok) ? 2 : (!pitch_done ? 1 : 0);
+          can.publishCmdResult(BallButlerCommandType::THROW,
+                               BallButlerCommandOutcome::THROW_ABORTED_NOT_SETTLED,
+                               axis, (int16_t)(yt.err_deg * 100.0f));
           aborted_ = true;
           active = false;
           return;  // send NO frames — hand stays at rest, ball retained

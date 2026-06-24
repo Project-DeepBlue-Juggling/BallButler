@@ -19,6 +19,7 @@ entries, which stay authoritative. Open the `.html` in a browser.
 
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
+| 2026-06-23 | tuned | feature | firmware, throwing, tooling | Loud command-outcome channel (CMD_RESULT) + bb/throw ROS2 action — Phase 2; generic firmware→host outcome relay (CAN1→UDP→action); hardware-validated 2026-06-24 (5/5) | [loud-command-outcome-channel-cmd-result](2026-06-23-loud-command-outcome-channel-cmd-result.md) |
 | 2026-06-21 | tuned | feature | firmware, throwing | Throw settle-gates — loud + guaranteed-on-aim throws; Phase 1 (A predictive + C fire-time confirm + serial) hardware-validated; Phase 2 (loud-to-host channel) deferred | [throw-settle-gates-loud-on-aim](2026-06-21-throw-settle-gates-loud-on-aim.md) |
 | 2026-06-18 | resolved | investigation | throwing, firmware, calibration, timing | Temporal accuracy resolved (≈44 ms → <10 ms): aim-correction (spatial) + measured release-latency offset (temporal); kinematic-ID & feedforward root-fixes ruled out | [temporal-accuracy-resolved-fractured-solution](2026-06-18-temporal-accuracy-resolved-fractured-solution.md) |
 | 2026-06-17 | resolved | investigation | throwing, firmware, calibration | Release-lag fix validated on hardware (δ 140→44 ms); residual is a +3° steeper / +10% hot launch | [release-lag-fix-validated-launch-discrepancy](2026-06-17-release-lag-fix-validated-launch-discrepancy.md) |

@@ -758,6 +758,26 @@ void CanInterface::publishHeartbeat_() {
 }
 
 // ================================================================================
+// Loud command-outcome channel (Phase 2) — CMD_RESULT (0x7D5)
+// ================================================================================
+bool CanInterface::publishCmdResult(uint8_t cmd_type, uint8_t outcome,
+                                    int16_t detail0, int16_t detail1) {
+  // Little-endian int16 details, mirroring the heartbeat frame idiom.
+  const uint16_t d0 = (uint16_t)detail0;
+  const uint16_t d1 = (uint16_t)detail1;
+  uint8_t frame[8];
+  frame[0] = cmd_type;
+  frame[1] = outcome;
+  frame[2] = d0 & 0xFF;
+  frame[3] = (d0 >> 8) & 0xFF;
+  frame[4] = d1 & 0xFF;
+  frame[5] = (d1 >> 8) & 0xFF;
+  frame[6] = 0;  // reserved
+  frame[7] = 0;  // reserved
+  return sendRaw(CanIds::CMD_RESULT, frame, 8);
+}
+
+// ================================================================================
 // Ball in Hand Check
 // ================================================================================
 void CanInterface::maybeCheckBallInHand_() {

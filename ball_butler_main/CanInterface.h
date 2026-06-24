@@ -170,6 +170,14 @@ public:
   bool sendRaw(uint32_t id, const uint8_t* data, uint8_t len);
   bool sendRTR(uint32_t id, uint8_t len);
 
+  // Loud command-outcome channel (Phase 2). Publishes one CMD_RESULT (0x7D5)
+  // frame the can-bridge relays to the host, so a firmware-side reject/abort of
+  // an operator command is reported instead of silently dropped. Layout:
+  //   byte0=cmd_type (BallButlerCommandType), byte1=outcome (BallButlerCommandOutcome),
+  //   bytes2-3=detail0 int16 LE, bytes4-5=detail1 int16 LE, bytes6-7 reserved.
+  bool publishCmdResult(uint8_t cmd_type, uint8_t outcome,
+                        int16_t detail0 = 0, int16_t detail1 = 0);
+
   static inline uint32_t makeId(uint32_t node_id, Cmd cmd) {
     return (node_id << 5) | (uint8_t(cmd) & 0x1F);
   }

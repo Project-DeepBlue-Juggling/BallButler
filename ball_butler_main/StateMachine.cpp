@@ -400,6 +400,10 @@ void StateMachine::handleThrowing_() {
       sub_state_ms_ = millis();  // Start post-throw delay timer
       debugf_("[SM] Throw complete, waiting %.1f sec before reload\n",
               config_.post_throw_delay_ms / 1000.0f);
+      // Terminal success outcome — the ball was released on-aim. One-shot
+      // (guarded by throw_complete_), the throw's single CMD_RESULT.
+      can_.publishCmdResult(BallButlerCommandType::THROW,
+                            BallButlerCommandOutcome::OK, -1, 0);
     }
 
     // Wait for post-throw delay before transitioning to reload
@@ -722,16 +726,22 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
   if (state_ != RobotState::IDLE && state_ != RobotState::TRACKING) {
     debugf_("[SM] Throw rejected: not in IDLE or TRACKING state (current: %s)\n",
             robotStateToString(state_));
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_BAD_STATE, -1, 0);
     return false;
   }
   if (!can_.isBallInHand()) {
     debugf_("[SM] Throw rejected: no ball in hand\n");
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_NO_BALL, -1, 0);
     return false;
   }
 
   // Require time sync to be established for absolute throw times
   if (!can_.hasTimeSync()) {
     debugf_("[SM] Throw rejected: time sync not established\n");
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_NO_TIMESYNC, -1, 0);
     return false;
   }
 
@@ -763,7 +773,8 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
     const int64_t actual_lead_us =
         (int64_t)throw_wall_us - (int64_t)can_.wallTimeUs();
     if ((float)actual_lead_us < required_lead_us) {
-      const char* who = (pitch_settle_us >= yaw_settle_us) ? "PITCH" : "YAW";
+      const bool pitch_binds = (pitch_settle_us >= yaw_settle_us);
+      const char* who = pitch_binds ? "PITCH" : "YAW";
       debugf_("[SM] Throw rejected: %s can't settle before wind-up — "
               "need %.0f ms, have %.0f ms (pitch=%.0f, yaw=%.0f, reengage=%.0f)\n",
               who,
@@ -772,6 +783,12 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
               (double)(pitch_settle_us / 1000.0f),
               (double)(yaw_settle_us / 1000.0f),
               (double)(reengage_us / 1000.0f));
+      // detail0 = binding axis (1=PITCH, 0=YAW); detail1 = lead shortfall (ms).
+      const int16_t shortfall_ms =
+          (int16_t)((required_lead_us - (float)actual_lead_us) / 1000.0f);
+      can_.publishCmdResult(BallButlerCommandType::THROW,
+                            BallButlerCommandOutcome::THROW_REJECTED_CANT_MAKE_LEAD,
+                            pitch_binds ? 1 : 0, shortfall_ms);
       return false;
     }
   }
@@ -926,6 +943,8 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
   // 2) Check hand is homed
   if (!can_.isAxisHomed(config_.hand_node_id)) {
     debugf_("[SM] Throw rejected: hand not homed\n");
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_HAND_NOT_HOMED, -1, 0);
     return false;
   }
 
@@ -934,6 +953,8 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
   uint64_t t_wall_us = 0;
   if (!can_.getAxisPV(config_.hand_node_id, pos_rev, vel_rps, t_wall_us)) {
     debugf_("[SM] Throw rejected: PV unavailable\n");
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_PV_UNAVAILABLE, -1, 0);
     return false;
   }
 
@@ -946,6 +967,9 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
     const uint64_t wall_age_us = can_.wallTimeUs() - t_wall_us;
     debugf_("[SM] Throw rejected: PV stale (mono_age=%lu us, wall_age=%lu us, synced=%d)\n",
             (unsigned long)mono_age_us, (unsigned long)wall_age_us, (int)can_.hasTimeSync());
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_PV_STALE,
+                          -1, (int16_t)(mono_age_us / 1000ULL));
     return false;
   }
 
@@ -955,6 +979,8 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
                                           traj_buffer_, TrajCfg::MAX_TRAJ_FRAMES);
   if (plan.frame_count == 0) {
     debugf_("[SM] Throw rejected: planner returned empty trajectory\n");
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_PLANNER_EMPTY, -1, 0);
     return false;
   }
   traj_count_ = plan.frame_count;
@@ -969,6 +995,10 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
   if ((float)actual_lead_us < required_lead_us) {
     debugf_("[SM] Throw rejected: insufficient lead time (need %.0f ms, have %.0f ms)\n",
             (double)(required_lead_us / 1000.0f), (double)(actual_lead_us / 1000.0f));
+    // Exec-time lead check (not per-axis): axis=-1, detail1 = shortfall (ms).
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_CANT_MAKE_LEAD,
+                          -1, (int16_t)((required_lead_us - (float)actual_lead_us) / 1000.0f));
     return false;
   }
 
@@ -986,6 +1016,14 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
   debugf_("[SM] Throw armed: frames=%u, ready_time=%.2f s, lead=%.1f ms, %s\n",
           (unsigned)traj_count_, planner_.lastTimeToReadyS(),
           (double)lead_ms, ok ? "OK" : "FAIL");
+
+  // A successful arm is NOT a terminal outcome — the single CMD_RESULT comes
+  // later (OK on completion in handleThrowing_, or ABORTED_NOT_SETTLED if Layer C
+  // aborts at fire). Only the arm-failure path reports here.
+  if (!ok) {
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_REJECTED_ARM_FAIL, -1, 0);
+  }
 
   return ok;
 }
