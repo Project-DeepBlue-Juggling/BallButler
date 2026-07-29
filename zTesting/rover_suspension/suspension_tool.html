@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BB Rover — Suspension Design Tool</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --plane: #f9f9f7;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --plane: #0d0d0d;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --good-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --plane: #0d0d0d;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --good-text: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1380px; margin: 0 auto; padding: 18px 20px 40px; }
+
+  header.page { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  header.page h1 { font-size: 19px; font-weight: 650; margin: 0; }
+  header.page .sub { color: var(--ink-2); font-size: 12.5px; }
+  header.page button { margin-left: auto; }
+
+  button {
+    font: inherit; font-size: 12px; color: var(--ink-2);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 7px; padding: 4px 10px; cursor: pointer;
+  }
+  button:hover { color: var(--ink); }
+
+  .layout { display: grid; grid-template-columns: 318px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px; position: relative;
+  }
+  .card h2 { font-size: 13px; font-weight: 650; margin: 0; }
+  .card .csub { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
+  .cardhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .cardhead .spacer { flex: 1; }
+
+  /* controls */
+  #controls { position: sticky; top: 14px; }
+  #controls .group { margin-top: 12px; }
+  #controls .group:first-child { margin-top: 0; }
+  #controls .gtitle {
+    font-size: 11px; font-weight: 650; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px;
+  }
+  .ctl { display: grid; grid-template-columns: 1fr 64px; gap: 8px; align-items: center; margin: 7px 0; }
+  .ctl label { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); margin-bottom: -3px; }
+  .ctl input[type=range] { width: 100%; accent-color: var(--s1); }
+  .ctl input[type=number] {
+    font: inherit; font-size: 12px; font-variant-numeric: tabular-nums;
+    color: var(--ink); background: var(--plane);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; width: 100%;
+  }
+
+  /* stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 10px 13px; }
+  .tile .tl { font-size: 11.5px; color: var(--ink-2); }
+  .tile .tv { font-size: 21px; font-weight: 600; margin-top: 1px; }
+  .tile .tv .unit { font-size: 12px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+  .tile .ts { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .tile .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+  /* warnings */
+  #warnings { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .warnrow {
+    display: flex; gap: 9px; align-items: baseline; font-size: 12.5px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 9px; padding: 7px 12px;
+  }
+  .warnrow .wicon { font-weight: 700; }
+  .warnrow .wtag { font-weight: 650; }
+
+  /* charts */
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 14px; margin-top: 14px; }
+  @media (max-width: 520px) { .charts { grid-template-columns: 1fr; } }
+  .chart-card svg.plot { display: block; width: 100%; height: auto; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); margin: 2px 0 4px; }
+  .legend .lkey { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 5px; }
+  .tooltip {
+    position: absolute; pointer-events: none; z-index: 5; display: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 11.5px; box-shadow: 0 3px 10px rgba(0,0,0,0.13);
+    min-width: 148px;
+  }
+  .tooltip .th { color: var(--ink-2); margin-bottom: 3px; }
+  .tooltip .tr { display: flex; align-items: baseline; gap: 7px; margin-top: 1px; }
+  .tooltip .tr .lkey { display: inline-block; width: 11px; height: 2px; border-radius: 1px; flex: none; }
+  .tooltip .tr .val { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tooltip .tr .nm { color: var(--ink-2); }
+  table.dataview { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 11.5px; }
+  table.dataview th { text-align: right; color: var(--ink-2); font-weight: 600; padding: 3px 8px; border-bottom: 1px solid var(--grid); }
+  table.dataview td { text-align: right; padding: 2.5px 8px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
+  table.dataview th:first-child, table.dataview td:first-child { text-align: left; }
+  .tablewrap { overflow-x: auto; }
+
+  /* svg text */
+  svg.plot text, #diagram svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .ticktext { font-size: 10.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .axistitle { font-size: 11px; fill: var(--muted); }
+  .marklabel { font-size: 10px; fill: var(--muted); }
+
+  #diagram-card { margin-top: 14px; }
+  #posebar { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin-top: 6px; }
+  #posebar input[type=range] { width: 100%; accent-color: var(--s1); }
+  #posereadout { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  footer.page { margin-top: 18px; font-size: 12px; color: var(--ink-2); display: flex; gap: 16px; flex-wrap: wrap; align-items: baseline; }
+  #selfcheck { font-weight: 650; }
+  details.model { margin-top: 14px; font-size: 13px; color: var(--ink-2); }
+  details.model summary { cursor: pointer; color: var(--ink); font-weight: 600; font-size: 13px; }
+  details.model code { background: var(--surface-1); border: 1px solid var(--border); border-radius: 5px; padding: 0 4px; font-size: 12px; }
+  details.model ul { margin: 8px 0; padding-left: 20px; }
+  details.model li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page">
+    <h1>BB Rover — Suspension Design Tool</h1>
+    <div class="sub">Parallel-bar (parallelogram) suspension · spring-damper between the bars · quasi-static</div>
+    <button id="themebtn" type="button">Theme: auto</button>
+  </header>
+
+  <div class="layout">
+    <div class="card" id="controls">
+      <div class="group">
+        <div class="gtitle">Geometry (mm)</div>
+        <div class="ctl" data-key="L"><label>Bar length L</label><input type="range" min="100" max="300" step="1"><input type="number" step="1"></div>
+        <div class="ctl" data-key="h"><label>Wall pivot spacing h</label><input type="range" min="30" max="200" step="1"><input type="number" step="1"></div>
+        <div class="ctl" data-key="x1"><label>Spring pin on upper bar x1</label><input type="range" min="0" max="300" step="1"><input type="number" step="1"></div>
+        <div class="ctl" data-key="x2"><label>Spring pin on lower bar x2</label><input type="range" min="0" max="300" step="1"><input type="number" step="1"></div>
+        <div class="ctl" data-key="woff"><label>Wheel contact offset from plate</label><input type="range" min="-100" max="100" step="1"><input type="number" step="1"></div>
+      </div>
+      <div class="group">
+        <div class="gtitle">Load</div>
+        <div class="ctl" data-key="mass"><label>Vehicle mass (kg, over 4 wheels)</label><input type="range" min="5" max="80" step="0.5"><input type="number" step="0.5"></div>
+        <div class="ctl" data-key="G"><label>Dynamic load factor G (×g)</label><input type="range" min="1" max="5" step="0.1"><input type="number" step="0.1"></div>
+      </div>
+      <div class="group">
+        <div class="gtitle">Travel (mm, active height)</div>
+        <div class="ctl" data-key="zrest"><label>Rest height z₀ (0 = bars level)</label><input type="range" min="-80" max="80" step="1"><input type="number" step="1"></div>
+        <div class="ctl" data-key="droop"><label>Droop below rest</label><input type="range" min="0" max="120" step="1"><input type="number" step="1"></div>
+        <div class="ctl" data-key="comp"><label>Compression above rest</label><input type="range" min="0" max="150" step="1"><input type="number" step="1"></div>
+      </div>
+      <div class="group" style="display:flex; gap:8px;">
+        <button id="resetbtn" type="button">Reset defaults</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="tiles" id="tiles"></div>
+      <div id="warnings"></div>
+
+      <div class="card" id="diagram-card">
+        <div class="cardhead">
+          <div>
+            <h2>Side view</h2>
+            <div class="csub">Chassis wall fixed; drag the pose slider to move the wheel through its travel</div>
+          </div>
+        </div>
+        <div id="diagram"></div>
+        <div id="posebar">
+          <input type="range" id="pose" min="0" max="1000" step="1" aria-label="Suspension pose">
+          <div id="posereadout"></div>
+        </div>
+      </div>
+
+      <div class="charts" id="charts"></div>
+
+      <details class="model">
+        <summary>Model, conventions &amp; verification</summary>
+        <ul>
+          <li>True parallelogram: wall and wheel plate stay vertical; both bars share angle θ above horizontal. Active height <code>z = L·sinθ</code> (z = 0 with bars level); θ &gt; 0 = wheel raised = compression.</li>
+          <li><code>x1</code>, <code>x2</code> are along-the-bar distances from the wall pivots. With <code>d = x2 − x1</code>: spring length <code>s(θ) = √(d² + h² − 2·h·d·sinθ)</code>.</li>
+          <li>Motion ratio <code>ds/dz = −h·d / (L·s)</code> (the cosθ cancels). Spring force by virtual work: <code>F = N·L·s / (h·d)</code>, with wheel load <code>N = m·g/4 × G</code>. d &gt; 0 loads the spring in compression, d &lt; 0 in tension.</li>
+          <li>Pivot loads come from the full 9-equation rigid-body statics of the two bars + plate (massless links, pin joints, vertical wheel load at horizontal offset <code>w</code> from the plate). The wheel offset changes pivot loads only — never the spring force.</li>
+          <li>Bar axial forces and the bending moment at each spring pin (reported in the pivot-load table) are taken from the outboard bar segment; axial + = tension.</li>
+          <li>Verified against an independent Python implementation: 2000 randomized configurations, spring force from the statics solve vs. virtual work agree to &lt;1e-13 relative; this page re-runs a fixed regression case + a sweep self-check at load (see footer badge).</li>
+        </ul>
+      </details>
+
+      <footer class="page">
+        <span id="selfcheck">Physics self-check: running…</span>
+        <span>Units: mm, N, degrees. All curves quasi-static.</span>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================ PHYSICS-BEGIN ============================ */
+const GRAV = 9.81;
+
+function springLen(x1, x2, h, th) {
+  const d = x2 - x1;
+  return Math.sqrt(d * d + h * h - 2 * h * d * Math.sin(th));
+}
+/* ds/dz — spring shortening rate per unit of upward wheel travel is -MR */
+function motionRatio(L, x1, x2, h, th) {
+  const d = x2 - x1;
+  return -h * d / (L * springLen(x1, x2, h, th));
+}
+/* Spring tension by virtual work; T > 0 tension, T < 0 compression */
+function springTension(L, x1, x2, h, th, N) {
+  const d = x2 - x1;
+  return -N * L * springLen(x1, x2, h, th) / (h * d);
+}
+
+function gaussSolve(A, b) {
+  const n = A.length;
+  const M = A.map((row, i) => row.concat([b[i]]));
+  for (let col = 0; col < n; col++) {
+    let p = col;
+    for (let r = col + 1; r < n; r++) if (Math.abs(M[r][col]) > Math.abs(M[p][col])) p = r;
+    if (Math.abs(M[p][col]) < 1e-12) return null;
+    [M[col], M[p]] = [M[p], M[col]];
+    for (let r = 0; r < n; r++) {
+      if (r !== col && M[r][col] !== 0) {
+        const f = M[r][col] / M[col][col];
+        for (let k = col; k <= n; k++) M[r][k] -= f * M[col][k];
+      }
+    }
+  }
+  return M.map((row, i) => row[n] / row[i]);
+}
+
+/* Full statics: unknowns [RAux,RAuy, RAlx,RAly, RBux,RBuy, RBlx,RBly, T].
+   RAu/RAl wall->bar at A_up/A_low; RBu/RBl plate->bar at B_up/B_low. */
+function solveStatics(L, h, x1, x2, th, N, woff) {
+  const c = Math.cos(th), s_ = Math.sin(th);
+  const d = x2 - x1;
+  if (Math.abs(d) < 0.5) return null;
+  const slen = springLen(x1, x2, h, th);
+  const esx = ((x1 - x2) * c) / slen;
+  const esy = (h + (x1 - x2) * s_) / slen;      /* unit vector P2 -> P1 */
+
+  const A = Array.from({ length: 9 }, () => new Array(9).fill(0));
+  const b = new Array(9).fill(0);
+  A[0][0] = 1; A[0][4] = 1; A[0][8] = -esx;
+  A[1][1] = 1; A[1][5] = 1; A[1][8] = -esy;
+  A[2][4] = -L * s_; A[2][5] = L * c; A[2][8] = -(x1 * c * esy - x1 * s_ * esx);
+  A[3][2] = 1; A[3][6] = 1; A[3][8] = esx;
+  A[4][3] = 1; A[4][7] = 1; A[4][8] = esy;
+  A[5][6] = -L * s_; A[5][7] = L * c; A[5][8] = (x2 * c * esy - x2 * s_ * esx);
+  A[6][4] = -1; A[6][6] = -1;
+  A[7][5] = -1; A[7][7] = -1; b[7] = -N;
+  A[8][4] = h; b[8] = -woff * N;
+
+  const u = gaussSolve(A, b);
+  if (!u) return null;
+  const dot = (vx, vy) => vx * c + vy * s_;
+  const crossV = (px, py, fx, fy) => px * fy - py * fx;
+  return {
+    s: slen, T: u[8],
+    RAu: [u[0], u[1]], RAl: [u[2], u[3]], RBu: [u[4], u[5]], RBl: [u[6], u[7]],
+    axialU: dot(u[4], u[5]),                    /* outboard segment, + = tension */
+    axialL: dot(u[6], u[7]),
+    bendU: crossV((L - x1) * c, (L - x1) * s_, u[4], u[5]),   /* moment at P1 from B-side */
+    bendL: crossV((L - x2) * c, (L - x2) * s_, u[6], u[7]),
+  };
+}
+/* ============================ PHYSICS-END ============================ */
+
+/* ------------------------------ state ------------------------------ */
+const DEFAULTS = { L: 175, h: 80, x1: 60, x2: 140, woff: 0, mass: 35, G: 3, zrest: 0, droop: 40, comp: 100 };
+const LS_PARAMS = "bb-susp-params", LS_THEME = "bb-susp-theme";
+let P = { ...DEFAULTS };
+try {
+  const saved = JSON.parse(localStorage.getItem(LS_PARAMS) || "null");
+  if (saved && typeof saved === "object") for (const k of Object.keys(DEFAULTS)) if (typeof saved[k] === "number" && isFinite(saved[k])) P[k] = saved[k];
+} catch (e) { /* fresh start */ }
+let poseFrac = null;   /* 0..1 across travel range; null = at rest */
+
+const NSAMP = 121;
+function computeAll(p) {
+  const zlim = 0.98 * p.L;
+  let zmin = p.zrest - p.droop, zmax = p.zrest + p.comp;
+  const clamped = zmin < -zlim || zmax > zlim;
+  zmin = Math.max(zmin, -zlim); zmax = Math.min(zmax, zlim);
+  if (zmax - zmin < 1) zmax = zmin + 1;
+  const Ns = p.mass * GRAV / 4;
+  const NG = Ns * p.G;
+  const z = [], th = [], sL = [], mr = [], f1 = [], fG = [], piv = [];
+  for (let i = 0; i < NSAMP; i++) {
+    const zi = zmin + (zmax - zmin) * i / (NSAMP - 1);
+    const ti = Math.asin(zi / p.L);
+    z.push(zi); th.push(ti);
+    sL.push(springLen(p.x1, p.x2, p.h, ti));
+    mr.push(Math.abs(motionRatio(p.L, p.x1, p.x2, p.h, ti)));
+    const st = solveStatics(p.L, p.h, p.x1, p.x2, ti, NG, p.woff);
+    piv.push(st);
+    f1.push(Math.abs(springTension(p.L, p.x1, p.x2, p.h, ti, Ns)));
+    fG.push(Math.abs(springTension(p.L, p.x1, p.x2, p.h, ti, NG)));
+  }
+  return { z, th, sL, mr, f1, fG, piv, zmin, zmax, clamped, Ns, NG };
+}
+
+/* ------------------------------ helpers ------------------------------ */
+function el(tag, attrs, parent) {
+  const isSvg = ["svg", "g", "path", "line", "circle", "rect", "text"].includes(tag);
+  const e = isSvg ? document.createElementNS("http://www.w3.org/2000/svg", tag) : document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (k === "textContent") e.textContent = v; else e.setAttribute(k, v);
+  }
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function fmt(v, dp) { return (+v).toFixed(dp); }
+function niceTicks(min, max, count) {
+  const span = max - min;
+  if (!(span > 0)) return [min];
+  const step0 = span / (count || 5);
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  const out = [];
+  for (let v = Math.ceil(min / step - 1e-9) * step; v <= max + 1e-9; v += step) out.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+  return out;
+}
+
+/* ------------------------------ chart ------------------------------ */
+const VW = 640, VH = 300, MARG = { l: 58, r: 16, t: 12, b: 36 };
+
+function lineChart(host, cfg) {
+  /* cfg: {title, sub, series:[{name,color,y:[]}], x:[], th:[], restX, yZero, dp, unit,
+           extraCols:[{name, vals:[], dp}]} */
+  host.textContent = "";
+  const head = el("div", { class: "cardhead" }, host);
+  const hbox = el("div", null, head);
+  el("h2", { textContent: cfg.title }, hbox);
+  if (cfg.sub) el("div", { class: "csub", textContent: cfg.sub }, hbox);
+  el("div", { class: "spacer" }, head);
+  const tbtn = el("button", { type: "button", textContent: "Table" }, head);
+
+  if (cfg.series.length > 1) {
+    const lg = el("div", { class: "legend" }, host);
+    for (const s of cfg.series) {
+      const item = el("span", null, lg);
+      el("span", { class: "lkey", style: `background:${s.color}` }, item);
+      item.appendChild(document.createTextNode(s.name));
+    }
+  }
+
+  const xs = cfg.x;
+  const allY = cfg.series.flatMap(s => s.y).filter(v => isFinite(v));
+  let ymin = cfg.yZero ? 0 : Math.min(...allY);
+  let ymax = Math.max(...allY);
+  if (!(ymax > ymin)) ymax = ymin + 1;
+  const pad = (ymax - ymin) * 0.06;
+  if (!cfg.yZero) ymin -= pad;
+  ymax += pad;
+  const xmin = xs[0], xmax = xs[xs.length - 1];
+  const X = v => MARG.l + (v - xmin) / (xmax - xmin) * (VW - MARG.l - MARG.r);
+  const Y = v => VH - MARG.b - (v - ymin) / (ymax - ymin) * (VH - MARG.t - MARG.b);
+
+  const svg = el("svg", { class: "plot", viewBox: `0 0 ${VW} ${VH}`, tabindex: "0", role: "img", "aria-label": cfg.title }, host);
+
+  for (const t of niceTicks(ymin, ymax, 5)) {
+    el("line", { x1: MARG.l, x2: VW - MARG.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    el("text", { x: MARG.l - 7, y: Y(t) + 3.5, "text-anchor": "end", class: "ticktext", textContent: fmt(t, t !== Math.round(t) ? 2 : 0) }, svg);
+  }
+  el("line", { x1: MARG.l, x2: VW - MARG.r, y1: VH - MARG.b, y2: VH - MARG.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  for (const t of niceTicks(xmin, xmax, 6)) {
+    if (t < xmin - 1e-9 || t > xmax + 1e-9) continue;
+    el("line", { x1: X(t), x2: X(t), y1: VH - MARG.b, y2: VH - MARG.b + 4, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+    el("text", { x: X(t), y: VH - MARG.b + 15, "text-anchor": "middle", class: "ticktext", textContent: fmt(t, 0) }, svg);
+  }
+  el("text", { x: (MARG.l + VW - MARG.r) / 2, y: VH - 5, "text-anchor": "middle", class: "axistitle", textContent: "active height z (mm)  —  compression →" }, svg);
+
+  if (cfg.restX !== undefined && cfg.restX >= xmin && cfg.restX <= xmax) {
+    el("line", { x1: X(cfg.restX), x2: X(cfg.restX), y1: MARG.t, y2: VH - MARG.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+    el("text", { x: X(cfg.restX) + 4, y: MARG.t + 9, class: "marklabel", textContent: "rest" }, svg);
+  }
+
+  for (const s of cfg.series) {
+    let dstr = "";
+    for (let i = 0; i < xs.length; i++) {
+      if (!isFinite(s.y[i])) continue;
+      dstr += (dstr ? "L" : "M") + fmt(X(xs[i]), 2) + " " + fmt(Y(s.y[i]), 2);
+    }
+    el("path", { d: dstr, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+  }
+
+  /* crosshair + tooltip */
+  const cross = el("g", { style: "display:none" }, svg);
+  el("line", { x1: 0, x2: 0, y1: MARG.t, y2: VH - MARG.b, stroke: "var(--axis)", "stroke-width": 1 }, cross);
+  const dots = cfg.series.map(s =>
+    el("circle", { r: 4.5, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2 }, cross));
+  const tip = el("div", { class: "tooltip" }, host);
+
+  function showIdx(i, clientX) {
+    const px = X(xs[i]);
+    cross.style.display = "";
+    cross.firstChild.setAttribute("x1", px);
+    cross.firstChild.setAttribute("x2", px);
+    cfg.series.forEach((s, k) => {
+      dots[k].setAttribute("cx", px);
+      dots[k].setAttribute("cy", isFinite(s.y[i]) ? Y(s.y[i]) : -99);
+    });
+    tip.textContent = "";
+    el("div", { class: "th", textContent: `z = ${fmt(xs[i], 0)} mm  (θ = ${fmt(cfg.th[i] * 180 / Math.PI, 1)}°)` }, tip);
+    for (const s of cfg.series) {
+      const row = el("div", { class: "tr" }, tip);
+      el("span", { class: "lkey", style: `background:${s.color}` }, row);
+      el("span", { class: "val", textContent: isFinite(s.y[i]) ? fmt(s.y[i], cfg.dp) + (cfg.unit ? " " + cfg.unit : "") : "—" }, row);
+      el("span", { class: "nm", textContent: s.name }, row);
+    }
+    if (cfg.extraCols) for (const c of cfg.extraCols) {
+      const row = el("div", { class: "tr" }, tip);
+      el("span", { class: "lkey", style: "background:var(--muted)" }, row);
+      el("span", { class: "val", textContent: isFinite(c.vals[i]) ? fmt(c.vals[i], c.dp) : "—" }, row);
+      el("span", { class: "nm", textContent: c.name }, row);
+    }
+    tip.style.display = "block";
+    const hostRect = host.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
+    const fx = svgRect.left - hostRect.left + px / VW * svgRect.width;
+    const flip = px > VW * 0.62;
+    tip.style.left = flip ? "auto" : (fx + 14) + "px";
+    tip.style.right = flip ? (hostRect.width - fx + 14) + "px" : "auto";
+    tip.style.top = (svgRect.top - hostRect.top + 18) + "px";
+    return i;
+  }
+  let curIdx = Math.floor(xs.length / 2);
+  function idxFromEvent(ev) {
+    const r = svg.getBoundingClientRect();
+    const vx = (ev.clientX - r.left) / r.width * VW;
+    const frac = (vx - MARG.l) / (VW - MARG.l - MARG.r);
+    return Math.max(0, Math.min(xs.length - 1, Math.round(frac * (xs.length - 1))));
+  }
+  svg.addEventListener("pointermove", ev => { curIdx = showIdx(idxFromEvent(ev)); });
+  svg.addEventListener("pointerleave", () => { cross.style.display = "none"; tip.style.display = "none"; });
+  svg.addEventListener("focus", () => showIdx(curIdx));
+  svg.addEventListener("blur", () => { cross.style.display = "none"; tip.style.display = "none"; });
+  svg.addEventListener("keydown", ev => {
+    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+      curIdx = Math.max(0, Math.min(xs.length - 1, curIdx + (ev.key === "ArrowRight" ? 2 : -2)));
+      showIdx(curIdx); ev.preventDefault();
+    }
+  });
+
+  /* table view */
+  const twrap = el("div", { class: "tablewrap", hidden: "" }, host);
+  const table = el("table", { class: "dataview" }, twrap);
+  const thead = el("tr", null, el("thead", null, table));
+  el("th", { textContent: "z (mm)" }, thead);
+  el("th", { textContent: "θ (°)" }, thead);
+  for (const s of cfg.series) el("th", { textContent: s.name + (cfg.unit ? ` (${cfg.unit})` : "") }, thead);
+  if (cfg.extraCols) for (const c of cfg.extraCols) el("th", { textContent: c.name }, thead);
+  const tbody = el("tbody", null, table);
+  const step = Math.max(1, Math.floor((xs.length - 1) / 12));
+  for (let i = 0; i < xs.length; i += step) {
+    const tr = el("tr", null, tbody);
+    el("td", { textContent: fmt(xs[i], 0) }, tr);
+    el("td", { textContent: fmt(cfg.th[i] * 180 / Math.PI, 1) }, tr);
+    for (const s of cfg.series) el("td", { textContent: isFinite(s.y[i]) ? fmt(s.y[i], cfg.dp) : "—" }, tr);
+    if (cfg.extraCols) for (const c of cfg.extraCols) el("td", { textContent: isFinite(c.vals[i]) ? fmt(c.vals[i], c.dp) : "—" }, tr);
+  }
+  tbtn.addEventListener("click", () => {
+    twrap.hidden = !twrap.hidden;
+    tbtn.textContent = twrap.hidden ? "Table" : "Hide table";
+  });
+  if (cfg.note) el("div", { class: "csub", style: "margin-top:6px", textContent: cfg.note }, host);
+}
+
+/* ------------------------------ diagram ------------------------------ */
+function drawDiagram(p, R, zCur) {
+  const hostD = document.getElementById("diagram");
+  hostD.textContent = "";
+  const th = Math.asin(Math.max(-1, Math.min(1, zCur / p.L)));
+  const c = Math.cos(th), s_ = Math.sin(th);
+  const wheelR = 52;
+  const Au = [0, p.h], Al = [0, 0];
+  const Bu = [p.L * c, p.h + p.L * s_], Bl = [p.L * c, p.L * s_];
+  const P1 = [p.x1 * c, p.h + p.x1 * s_], P2 = [p.x2 * c, p.x2 * s_];
+  const wc = [p.L * c + p.woff, p.L * s_ + p.h / 2];
+
+  const thMin = Math.asin(Math.max(-1, R.zmin / p.L)), thMax = Math.asin(Math.min(1, R.zmax / p.L));
+  const xlo = -34, xhi = Math.max(p.L, p.L * Math.cos(thMin)) + Math.abs(p.woff) + wheelR + 30;
+  const ylo = Math.min(0, p.L * Math.sin(thMin)) + p.h / 2 - wheelR - 26;
+  const yhi = p.h + Math.max(0, p.L * Math.sin(thMax)) + 26;
+  const w = xhi - xlo, hh = yhi - ylo;
+  const DW = 640, DH = Math.max(230, Math.min(420, DW * hh / w));
+  const k = Math.min(DW / w, DH / hh);
+  const ox = (DW - w * k) / 2;
+  const W = pt => [ox + (pt[0] - xlo) * k, (yhi - pt[1]) * k + (DH - hh * k) / 2];
+
+  const svg = el("svg", { viewBox: `0 0 ${DW} ${DH}`, style: "display:block;width:100%;height:auto", role: "img", "aria-label": "Suspension side view" }, hostD);
+  const seg = (a, b, attrs) => {
+    const [ax, ay] = W(a), [bx, by] = W(b);
+    return el("line", Object.assign({ x1: ax, y1: ay, x2: bx, y2: by, "stroke-linecap": "round" }, attrs), svg);
+  };
+  /* chassis wall + hatching */
+  seg([0, -26], [0, p.h + 26], { stroke: "var(--axis)", "stroke-width": 5 });
+  for (let y = -20; y <= p.h + 20; y += 14)
+    seg([0, y], [-13, y - 10], { stroke: "var(--muted)", "stroke-width": 1 });
+  /* ground under wheel */
+  const gy = wc[1] - wheelR;
+  seg([wc[0] - 76, gy], [wc[0] + 76, gy], { stroke: "var(--muted)", "stroke-width": 1.5 });
+  for (let gx = wc[0] - 70; gx <= wc[0] + 70; gx += 16)
+    seg([gx, gy], [gx - 9, gy - 9], { stroke: "var(--muted)", "stroke-width": 1 });
+  /* wheel + plate */
+  const [wcx, wcy] = W(wc);
+  el("circle", { cx: wcx, cy: wcy, r: wheelR * k, fill: "none", stroke: "var(--muted)", "stroke-width": 3 }, svg);
+  el("circle", { cx: wcx, cy: wcy, r: 4, fill: "var(--muted)" }, svg);
+  seg([Bl[0], Bl[1] - 22], [Bu[0], Bu[1] + 22], { stroke: "var(--axis)", "stroke-width": 5 });
+  /* bars */
+  seg(Au, Bu, { stroke: "var(--ink-2)", "stroke-width": 4 });
+  seg(Al, Bl, { stroke: "var(--ink-2)", "stroke-width": 4 });
+  /* spring-damper: rod + body */
+  seg(P1, P2, { stroke: "var(--s1)", "stroke-width": 2.5 });
+  const mid = t => [P1[0] + (P2[0] - P1[0]) * t, P1[1] + (P2[1] - P1[1]) * t];
+  seg(mid(0.3), mid(0.7), { stroke: "var(--s1)", "stroke-width": 9 });
+  /* pins */
+  for (const pt of [Au, Al, Bu, Bl]) {
+    const [px, py] = W(pt);
+    el("circle", { cx: px, cy: py, r: 4.5, fill: "var(--ink)", stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+  }
+  for (const pt of [P1, P2]) {
+    const [px, py] = W(pt);
+    el("circle", { cx: px, cy: py, r: 3.5, fill: "var(--s1)", stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+  }
+  const lbl = (pt, dx, dy, txt) => {
+    const [px, py] = W(pt);
+    el("text", { x: px + dx, y: py + dy, class: "marklabel", textContent: txt }, svg);
+  };
+  lbl(Au, -26, 4, "A↑"); lbl(Al, -26, 4, "A↓");
+  lbl(Bu, 10, 4, "B↑"); lbl(Bl, 10, 4, "B↓");
+}
+
+/* ------------------------------ warnings & tiles ------------------------------ */
+function statusRow(kind, tag, msg) {
+  const iconMap = { good: "✓", warning: "▲", serious: "▲", critical: "⛔" };
+  const row = el("div", { class: "warnrow" });
+  el("span", { class: "wicon", style: `color: var(--${kind})`, textContent: iconMap[kind] }, row);
+  el("span", { class: "wtag", textContent: tag }, row);
+  row.appendChild(document.createTextNode(msg));
+  return row;
+}
+
+function tile(label, value, unit, sub, dotColor) {
+  const t = el("div", { class: "tile" });
+  el("div", { class: "tl", textContent: label }, t);
+  const v = el("div", { class: "tv" }, t);
+  if (dotColor) el("span", { class: "dot", style: `background:${dotColor}` }, v);
+  v.appendChild(document.createTextNode(value));
+  if (unit) el("span", { class: "unit", textContent: unit }, v);
+  if (sub) el("div", { class: "ts", textContent: sub }, t);
+  return t;
+}
+
+/* ------------------------------ render ------------------------------ */
+function render() {
+  const R = computeAll(P);
+  const d = P.x2 - P.x1;
+  const thRest = Math.asin(Math.max(-1, Math.min(1, P.zrest / P.L)));
+  const sRest = springLen(P.x1, P.x2, P.h, thRest);
+  const mrRest = Math.abs(motionRatio(P.L, P.x1, P.x2, P.h, thRest));
+  const fRest = Math.abs(springTension(P.L, P.x1, P.x2, P.h, thRest, R.Ns));
+  const sMin = Math.min(...R.sL), sMax = Math.max(...R.sL);
+  const fGmax = Math.max(...R.fG.filter(isFinite));
+  const degenerate = Math.abs(d) < 0.5;
+
+  /* tiles */
+  const tiles = document.getElementById("tiles");
+  tiles.textContent = "";
+  tiles.append(
+    tile("Spring length at rest", degenerate ? "—" : fmt(sRest, 1), "mm", `range ${fmt(sMin, 1)} – ${fmt(sMax, 1)} mm over travel`),
+    tile("Spring stroke over travel", degenerate ? "—" : fmt(sMax - sMin, 1), "mm", "damper must cover this"),
+    tile("Motion ratio at rest", degenerate ? "—" : fmt(mrRest, 3), "mm/mm", "spring travel per wheel travel"),
+    tile("Spring force at rest (1g)", degenerate ? "—" : fmt(fRest, 0), "N", `quarter-car load ${fmt(R.Ns, 0)} N`),
+    tile(`Peak spring force at ${fmt(P.G, 1)}g`, degenerate ? "—" : fmt(fGmax, 0), "N", "worst point in travel range"),
+    tile("Spring loading mode", degenerate ? "—" : (d > 0 ? "Compression" : "Tension"), "",
+      d > 0 ? "x2 > x1 — standard coilover" : "x2 < x1 — needs extension-capable unit",
+      d > 0 ? "var(--good)" : "var(--warning)")
+  );
+
+  /* warnings */
+  const warn = document.getElementById("warnings");
+  warn.textContent = "";
+  const rows = [];
+  if (degenerate)
+    rows.push(statusRow("critical", "Degenerate geometry:", " x1 ≈ x2 — the spring cannot stroke at all and forces diverge. Separate the pins."));
+  else if (Math.abs(d) < 15)
+    rows.push(statusRow("serious", "Small pin separation:", ` |x2−x1| = ${fmt(Math.abs(d), 0)} mm gives a weak motion ratio — spring forces are very high.`));
+  if (Math.max(P.x1, P.x2) > P.L)
+    rows.push(statusRow("warning", "Pin beyond bar end:", ` x${P.x1 > P.L ? "1" : "2"} exceeds L = ${fmt(P.L, 0)} mm.`));
+  if (!degenerate && sMin < 25)
+    rows.push(statusRow("serious", "Spring nearly collapses:", ` minimum length ${fmt(sMin, 1)} mm in the travel range.`));
+  if (R.clamped)
+    rows.push(statusRow("warning", "Travel clamped:", ` the requested range exceeds what the bars allow (|z| < ${fmt(0.98 * P.L, 0)} mm); plots show the clamped range.`));
+  if (rows.length === 0)
+    rows.push(statusRow("good", "Geometry OK", " — no red flags in the current travel range."));
+  warn.append(...rows);
+
+  /* charts */
+  const chartsHost = document.getElementById("charts");
+  chartsHost.textContent = "";
+  const mk = () => el("div", { class: "card chart-card" }, chartsHost);
+  lineChart(mk(), {
+    title: "Spring-damper length (mm)", sub: "pin-to-pin distance across the travel range",
+    x: R.z, th: R.th, restX: P.zrest, dp: 1, unit: "mm",
+    series: [{ name: "Spring length", color: "var(--s1)", y: R.sL }],
+  });
+  lineChart(mk(), {
+    title: "Motion ratio (mm spring / mm wheel)", sub: "|ds/dz| — higher = spring works harder per mm of wheel travel",
+    x: R.z, th: R.th, restX: P.zrest, yZero: true, dp: 3, unit: "",
+    series: [{ name: "Motion ratio", color: "var(--s1)", y: R.mr }],
+  });
+  lineChart(mk(), {
+    title: "Spring-damper force (N)", sub: `static (1g) and at the ${fmt(P.G, 1)}g dynamic load factor`,
+    x: R.z, th: R.th, restX: P.zrest, yZero: true, dp: 0, unit: "N",
+    series: [
+      { name: "Static (1g)", color: "var(--s1)", y: R.f1 },
+      { name: `At ${fmt(P.G, 1)}g`, color: "var(--s2)", y: R.fG },
+    ],
+  });
+  const pv = key => R.piv.map(st => st ? Math.hypot(st[key][0], st[key][1]) : NaN);
+  const px = key => R.piv.map(st => st ? st[key] : NaN);
+  const worstBend = Math.max(...R.piv.filter(Boolean).flatMap(st => [Math.abs(st.bendU), Math.abs(st.bendL)]));
+  lineChart(mk(), {
+    title: `Pivot loads at ${fmt(P.G, 1)}g (N)`, sub: "pin reaction magnitudes; axial + bending in the table & tooltip",
+    x: R.z, th: R.th, restX: P.zrest, yZero: true, dp: 0, unit: "N",
+    series: [
+      { name: "Wall upper A↑", color: "var(--s1)", y: pv("RAu") },
+      { name: "Wall lower A↓", color: "var(--s2)", y: pv("RAl") },
+      { name: "Plate upper B↑", color: "var(--s3)", y: pv("RBu") },
+      { name: "Plate lower B↓", color: "var(--s4)", y: pv("RBl") },
+    ],
+    extraCols: [
+      { name: "upper bar axial (N, + tension)", vals: px("axialU"), dp: 0 },
+      { name: "lower bar axial (N, + tension)", vals: px("axialL"), dp: 0 },
+      { name: "bend @ P1 (N·mm)", vals: px("bendU"), dp: 0 },
+      { name: "bend @ P2 (N·mm)", vals: px("bendL"), dp: 0 },
+    ],
+    note: isFinite(worstBend) ? `Worst bending moment at a spring pin over the range: ${fmt(worstBend / 1000, 2)} N·m` : "",
+  });
+
+  /* diagram + pose */
+  const pose = document.getElementById("pose");
+  if (poseFrac === null) poseFrac = (P.zrest - R.zmin) / (R.zmax - R.zmin);
+  poseFrac = Math.max(0, Math.min(1, poseFrac));
+  pose.value = Math.round(poseFrac * 1000);
+  updatePose(R);
+  return R;
+}
+
+function updatePose(R) {
+  const pose = document.getElementById("pose");
+  poseFrac = (+pose.value) / 1000;
+  const zCur = R.zmin + (R.zmax - R.zmin) * poseFrac;
+  drawDiagram(P, R, zCur);
+  const th = Math.asin(Math.max(-1, Math.min(1, zCur / P.L)));
+  const s = springLen(P.x1, P.x2, P.h, th);
+  const f = Math.abs(P.x2 - P.x1) < 0.5 ? NaN : Math.abs(springTension(P.L, P.x1, P.x2, P.h, th, R.Ns));
+  document.getElementById("posereadout").textContent =
+    `θ = ${fmt(th * 180 / Math.PI, 1)}°   z = ${fmt(zCur, 0)} mm   spring = ${fmt(s, 1)} mm` +
+    (isFinite(f) ? `   F@1g = ${fmt(f, 0)} N` : "");
+}
+
+/* ------------------------------ controls ------------------------------ */
+let lastR = null;
+function bindControls() {
+  document.querySelectorAll(".ctl").forEach(ctl => {
+    const key = ctl.dataset.key;
+    const range = ctl.querySelector("input[type=range]");
+    const num = ctl.querySelector("input[type=number]");
+    num.min = range.min; num.max = range.max;
+    const set = v => {
+      v = Math.max(+range.min, Math.min(+range.max, +v));
+      if (!isFinite(v)) return;
+      P[key] = v; range.value = v; num.value = v;
+      try { localStorage.setItem(LS_PARAMS, JSON.stringify(P)); } catch (e) {}
+      lastR = render();
+    };
+    range.value = P[key]; num.value = P[key];
+    range.addEventListener("input", () => set(range.value));
+    num.addEventListener("change", () => set(num.value));
+  });
+  document.getElementById("resetbtn").addEventListener("click", () => {
+    P = { ...DEFAULTS }; poseFrac = null;
+    try { localStorage.removeItem(LS_PARAMS); } catch (e) {}
+    document.querySelectorAll(".ctl").forEach(ctl => {
+      const key = ctl.dataset.key;
+      ctl.querySelector("input[type=range]").value = P[key];
+      ctl.querySelector("input[type=number]").value = P[key];
+    });
+    lastR = render();
+  });
+  document.getElementById("pose").addEventListener("input", () => { if (lastR) updatePose(lastR); });
+
+  const btn = document.getElementById("themebtn");
+  let mode = localStorage.getItem(LS_THEME) || "auto";
+  const apply = () => {
+    if (mode === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = mode;
+    btn.textContent = "Theme: " + mode;
+  };
+  apply();
+  btn.addEventListener("click", () => {
+    mode = mode === "auto" ? "light" : mode === "light" ? "dark" : "auto";
+    try { localStorage.setItem(LS_THEME, mode); } catch (e) {}
+    apply();
+  });
+}
+
+/* ------------------------------ self-check ------------------------------ */
+function selfCheck() {
+  const out = document.getElementById("selfcheck");
+  const problems = [];
+  /* 1. fixed regression vs the independent Python solve (L=175,h=80,x1=60,x2=140,N=257.5125,woff=0,th=0) */
+  const N0 = 35 * GRAV / 4 * 3;
+  const st = solveStatics(175, 80, 60, 140, 0, N0, 0);
+  const expect = { T: -796.64, RAu: 674.05, RAl: 574.46, RBu: 193.13, RBl: 450.65, s: 113.137 };
+  const close = (a, b) => Math.abs(a - b) < Math.abs(b) * 0.005;
+  if (!st || !close(st.T, expect.T) || !close(st.s, expect.s) ||
+      !close(Math.hypot(...st.RAu), expect.RAu) || !close(Math.hypot(...st.RAl), expect.RAl) ||
+      !close(Math.hypot(...st.RBu), expect.RBu) || !close(Math.hypot(...st.RBl), expect.RBl))
+    problems.push("regression vs Python reference");
+  /* 2. sweep: statics T vs virtual-work T; wall reactions sum to -(0,N) */
+  for (let i = 0; i <= 40; i++) {
+    const th = (-50 + 100 * i / 40) * Math.PI / 180;
+    const s2 = solveStatics(220, 120, 40, 190, th, 333, 44);
+    if (!s2) { problems.push("sweep solve failed"); break; }
+    const Tvw = springTension(220, 40, 190, 120, th, 333);
+    if (Math.abs(s2.T - Tvw) > 1e-6 * Math.max(1, Math.abs(Tvw))) { problems.push("virtual-work mismatch"); break; }
+    if (Math.abs(s2.RAu[0] + s2.RAl[0]) > 1e-6 || Math.abs(s2.RAu[1] + s2.RAl[1] + 333) > 1e-6) { problems.push("global equilibrium"); break; }
+  }
+  /* 3. degenerate case is constant-length */
+  if (Math.abs(springLen(90, 90, 77, 0.4) - 77) > 1e-9) problems.push("x1=x2 invariant");
+  if (problems.length === 0) {
+    out.textContent = "Physics self-check: 3/3 passed ✓";
+    out.style.color = "var(--good-text)";
+  } else {
+    out.textContent = "Physics self-check FAILED: " + problems.join(", ");
+    out.style.color = "var(--critical)";
+    console.error("Self-check failures:", problems);
+  }
+  return problems.length === 0;
+}
+
+bindControls();
+lastR = render();
+selfCheck();
+</script>
+</body>
+</html>
