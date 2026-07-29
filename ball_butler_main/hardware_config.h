@@ -35,9 +35,16 @@ namespace Dynamics {
   constexpr float PLATFORM_INERTIA_TENSOR_KGMM2_IYZ = 979.411f;
   constexpr float PLATFORM_INERTIA_TENSOR_KGMM2_IZZ = 9298.383f;
   constexpr float MOTOR_ROTOR_INERTIA_KGM2 = 0.000275f;
-  constexpr float MOTOR_KT_NM_PER_A = 0.0624f;
+  constexpr float MOTOR_KT_NM_PER_A = 0.057f;
   constexpr uint32_t MOTOR_POLE_PAIRS = 7u;
   constexpr uint32_t MOTOR_STATOR_SLOTS = 12u;
+  constexpr float MOTOR_KT_ODRIVE_CONFIG_NM_PER_A = 0.055133331567049f;
+  constexpr bool TORQUE_FF_ENABLED = true;
+  constexpr bool TORQUE_FF_GRAVITY = true;
+  constexpr bool TORQUE_FF_PLATFORM_INERTIA = false;
+  constexpr float TORQUE_FF_MAX_NM = 0.15f;
+  constexpr float TORQUE_FF_FIRMWARE_CLAMP_WIRE_NM = 0.25f;
+  constexpr float TORQUE_FF_RAMP_S = 2.0f;
 }
 
 // ==========================================================================
@@ -95,6 +102,7 @@ namespace Homing {
   constexpr float HAND_ABS_POS_REV = -0.1f;
   constexpr float EMA_WEIGHT = 0.7f;
   constexpr float MOTOR_TIMEOUT_S = 30.0f;
+  constexpr uint32_t STOP_SETTLE_MS = 5u;
 }
 
 // ==========================================================================
@@ -121,7 +129,7 @@ namespace ODriveDefaults {
   constexpr float TRAP_VEL_LIMIT_RPS = 15.0f;
   constexpr float TRAP_ACC_LIMIT_RPS2 = 30.0f;
   constexpr float TRAP_DEC_LIMIT_RPS2 = 30.0f;
-  constexpr float LEG_VEL_LIMIT_RPS = 4.0f;
+  constexpr float LEG_VEL_LIMIT_RPS = 12.0f;
   constexpr float LEG_CURR_LIMIT_A = 10.0f;
   constexpr float HAND_VEL_LIMIT_RPS = 1000.0f;
   constexpr float HAND_CURR_LIMIT_A = 50.0f;
@@ -140,7 +148,19 @@ namespace ODriveDefaults {
 
 namespace JBOp {
   constexpr float DEFAULT_ACTIVE_Z_MM = 170.0f;
-  constexpr float HAND_CATCH_PRIME_REV = 9.858f;
+  constexpr float HAND_CATCH_PRIME_REV = 9.9594f;
+  constexpr float HAND_RETRACT_REV = 0.0f;
+  constexpr float CATCH_VEL_SCALE_DEFAULT = 0.8f;
+  constexpr bool RELOAD_PLATFORM_OPEN_LOOP = true;
+  constexpr const char* TOSS_TIER = "8b";
+  constexpr float TOSS_RELEASE_LATENCY_MS = 0.0f;
+  constexpr float TOSS_FLIGHT_TIME_DEFAULT_S = 0.8f;
+  constexpr float TOSS_MAX_DISPLACEMENT_MM = 150.0f;
+  constexpr bool TOSS_STAY_AT_POSE_ON_CAUGHT = true;
+  constexpr bool TOSS_REQUIRE_BALL_EVIDENCE = false;
+  constexpr float TOSS_SESSION_DWELL_DEFAULT_S = 6.0f;
+  constexpr float TOSS_SESSION_DWELL_MARGIN_S = 0.6f;
+  constexpr uint32_t TOSS_SESSION_MAX_THROWS = 20u;
   constexpr float TARGET_REACHED_POS_TOL_REV = 0.01f;
   constexpr float TARGET_REACHED_VEL_TOL_RPS = 0.1f;
   constexpr float GENTLE_MOVE_VEL_LIMIT_RPS = 2.5f;
@@ -151,6 +171,30 @@ namespace JBOp {
   constexpr float INCLINOMETER_OFFSET_DEG[2] = {-0.6f, -0.2f};
   constexpr float LEVELLING_SETTLE_S = 0.5f;
   constexpr float MAX_POSITION_STEP_REV = 0.3f;
+}
+
+// ==========================================================================
+// Jugglebot Trajectory Operational
+// ==========================================================================
+
+namespace TrajOp {
+  constexpr float LEG_VEL_LIMIT_MMPS = 1000.0f;
+  constexpr float LEG_ACC_LIMIT_MMPS2 = 5000.0f;
+  constexpr float LEG_JERK_LIMIT_MMPS3 = 30000.0f;
+  constexpr float LEG_VEL_CEILING_MMPS = 5000.0f;
+  constexpr float LEG_ACC_CEILING_MMPS2 = 5000.0f;
+  constexpr float LEG_JERK_CEILING_MMPS3 = 200000.0f;
+  constexpr float KNOT_DT_S = 0.025f;
+  constexpr float MIN_MOVE_DURATION_S = 0.2f;
+  constexpr float MIN_TIMED_LEAD_S = 0.25f;
+  constexpr float MAX_TIMED_LEAD_S = 60.0f;
+  constexpr float SPACEMOUSE_HORIZON_S = 0.35f;
+  constexpr float LEAN_GAIN = 0.6f;
+  constexpr float CATCH_REACH_FREEZE_S = 0.3f;
+  constexpr float CATCH_SETTLE_HOLD_S = 0.5f;
+  constexpr float CATCH_REACH_ENVELOPE_MM = 80.0f;
+  constexpr float CATCH_SEAT_RATE_RADPS = 0.0f;
+  constexpr bool RETIME_MODEL = false;
 }
 
 // ==========================================================================
@@ -173,6 +217,7 @@ namespace TeensyTraj {
   constexpr float LINEAR_GAIN_FACTOR = 1.035f;
   constexpr float INERTIA_HAND_ONLY_KG = 0.281f;
   constexpr float INERTIA_RATIO = 0.747f;
+  constexpr float THROW_DECEL_REFLECTED_INERTIA_KGM2 = 9.5e-06f;
   constexpr float THROW_VEL_HOLD_PCT = 0.05f;
   constexpr float CATCH_VEL_RATIO = 0.6f;
   constexpr float CATCH_VEL_HOLD_PCT = 0.1f;
@@ -182,6 +227,10 @@ namespace TeensyTraj {
   constexpr uint32_t SAMPLE_RATE_HZ = 500u;
   constexpr float MAX_SMOOTH_MOVE_HAND_ACCEL_RPS2 = 100.0f;
   constexpr float QUINTIC_S2_MAX = 5.7735027f;
+  constexpr float QUINTIC_H_MAX = 0.19753086f;
+  constexpr float QUINTIC_H2_MAX = 3.940234f;
+  constexpr float SMOOTH_MOVE_V0_DEADBAND_RPS = 6.0f;
+  constexpr float SMOOTH_MOVE_EXCURSION_MARGIN_REV = 0.5f;
   constexpr float MIN_EVENT_VEL_MPS = 0.3f;
   constexpr float MAX_EVENT_VEL_MPS = 7.0f;
 }
@@ -435,6 +484,19 @@ namespace BBBallDetect {
 }
 
 // ==========================================================================
+// Jugglebot Ball Detection
+// ==========================================================================
+
+namespace JBBallDetect {
+  constexpr bool ENABLED = true;
+  constexpr uint32_t GPIO_PIN = 2u;
+  constexpr uint32_t CHECK_INTERVAL_MS = 20u;
+  constexpr uint32_t MAX_MISSING_SAMPLES = 5u;
+  constexpr uint32_t CHECK_TIMEOUT_MS = 100u;
+  constexpr uint32_t EXPECTED_FW[3] = {0, 6, 11};
+}
+
+// ==========================================================================
 // Catching Cone
 // ==========================================================================
 
@@ -447,4 +509,12 @@ namespace CatchingCone {
   constexpr float DELTA_WARN_MS = 15.0f;
   constexpr float OFFSET_DISPLAY_LIMIT_MS = 50.0f;
   constexpr uint32_t OFFSET_HISTORY_LEN = 12u;
+}
+
+// ==========================================================================
+// Derived Constants (computed by generator)
+// ==========================================================================
+
+namespace JBOp {
+  constexpr float ACTIVATE_POSITION_REVS[6] = {2.190709451408076f, 2.1918534899593114f, 2.1762225037976197f, 2.1912531391531846f, 2.2037889152266708f, 2.200931467346294f};
 }
