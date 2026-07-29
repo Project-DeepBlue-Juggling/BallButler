@@ -92,8 +92,8 @@ public:
 
   // Endpoint IDs (canonical values in protocol_config.h, namespace EndpointId)
   struct EndpointIds {
-    static constexpr uint16_t COMMUTATION_MAPPER_POS_ABS = EndpointId::commutation_mapper_pos_abs;
-    static constexpr uint16_t GPIO_STATES                = EndpointId::GPIO_STATES;
+    static constexpr uint16_t COMMUTATION_MAPPER_POS_ABS = EndpointId::odrive_s1_0_6_11::commutation_mapper_pos_abs;
+    static constexpr uint16_t GPIO_STATES                = EndpointId::odrive_s1_0_6_11::get_gpio_states;
   };
 
   struct ArbitraryParamResponse {
