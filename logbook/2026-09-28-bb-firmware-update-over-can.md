@@ -10,6 +10,7 @@ files_changed:
   - ball_butler_main/FwUpdate.h (new)
   - ball_butler_main/FwUpdate.cpp (new)
   - ball_butler_main/FwUpdate.h (FW_VERSION 1 -> 2, the first CAN-flashed image)
+  - ball_butler_main/FwUpdate.h (FW_VERSION 2 -> 3, receipt for the faster transfer)
   - ball_butler_main/CanInterface.cpp
   - ball_butler_main/BallButlerConfig.h
   - ball_butler_main/ball_butler_main.ino
@@ -139,6 +140,19 @@ Receipts (full detail + logs in the Jugglebot entry's addendum):
   0 rewinds; console `[boot] ballbutler-main v2`, homing successful, BOOT → IDLE.
 - Unexplained, instrument-side: the USB console delivered no `[fwupd]` lines during the
   CAN flash (it did during the rehearsal). The receipts do not depend on it.
+
+## Addendum 2026-09-28 — FW 3: the faster transfer (host-side only)
+
+No firmware code change. FW_VERSION 2 → 3 is the receipt for a host-side speed-up in
+Jugglebot's flash tool (detail in its entry's addendum): BB's post-sector pause
+went from 0.5 to 0.12 s (a flush is ≈ 52 ms typical; a slow erase falls back on the
+BAD_SEQ rewind). `--verify-only` 12:10: DATA 45.9 s, 0 rewinds, VERIFY OK. CAN flash
+12:14 (`pio run -e teensy40_can -t upload`): DATA **45.8 s** (was 61.0), 0 rewinds,
+VERIFY OK `0x1070D8A7`, **`Ball Butler FW version: 2 -> 3`**, **56.25 s total** (was
+75.84). Pipelining the DATA RPCs failed cleanly (aborted before VERIFY): the bridge's
+RPC UDP socket queues one packet, so the transfer is bounded at one frame per ~1 ms
+bridge tick until a bridge FW raises that queue. BB's USB was not attached this
+sitting. The copy/COMMIT path was untouched, so its risk was the FW 2 flash's.
 
 ## Open Questions / Follow-ups
 
