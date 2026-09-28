@@ -6,6 +6,7 @@
 #include "StateMachine.h"
 #include "Trajectory.h"  // For TrajCfg::LINEAR_GAIN, accelToTorque()
 #include "RobotState.h"
+#include "FwUpdate.h"     // firmware update over CAN (0x7D6)
 
 // ---------------- Command-name table (optional; PROGMEM friendly) -------------
 static const CanInterface::CmdName kCmdNames[] PROGMEM = {
@@ -847,6 +848,25 @@ void CanInterface::handleRx_(const CAN_message_t& msg) {
   // Time sync - uses instance variable (can be overridden from default)
   if (msg.id == CanIds::TIME_SYNC_CMD && msg.len == 8 && !msg.flags.remote) {
     handleTimeSync_(msg);
+    return;
+  }
+
+  // Firmware update over CAN (FwUpdate.h). Handled before anything else: the
+  // id has no other meaning, and a DATA burst must not walk the checks below.
+  if (msg.id == CanIds::FW_UPDATE_CMD && !msg.flags.remote) {
+    FwUpdate::handleCommand(msg);
+    return;
+  }
+
+  // While a firmware-update session is open the robot is parked and the state
+  // machine frozen until the reboot that ends the session: refuse every host
+  // motion/state command rather than queue one that could act on a parked axis.
+  if (FwUpdate::sessionOpen() &&
+      (msg.id == CanIds::HOST_THROW_CMD || msg.id == CanIds::RELOAD_CMD ||
+       msg.id == CanIds::RESET_CMD || msg.id == CanIds::CALIBRATE_LOC_CMD)) {
+    if (dbg_ && dbg_can_) {
+      dbg_->printf("[CAN] id=0x%03lX ignored: firmware-update session open\n", (unsigned long)msg.id);
+    }
     return;
   }
 

@@ -108,6 +108,8 @@ namespace PlatformCanId {
   constexpr uint32_t STATE_UPDATE = 0x6E0;
   constexpr uint32_t TILT_READING = 0x7DE;
   constexpr uint32_t TRAFFIC_REPORT = 0x7DF;
+  constexpr uint32_t FW_UPDATE_CMD = 0x6F0;
+  constexpr uint32_t FW_UPDATE_REPLY = 0x6F1;
 }
 
 // Ball Butler Teensy <-> Host
@@ -118,6 +120,8 @@ namespace BallButlerCanId {
   constexpr uint32_t RESET_CMD = 0x7D3;
   constexpr uint32_t CALIBRATE_LOC_CMD = 0x7D4;
   constexpr uint32_t CMD_RESULT = 0x7D5;
+  constexpr uint32_t FW_UPDATE_CMD = 0x7D6;
+  constexpr uint32_t FW_UPDATE_REPLY = 0x7D7;
 }
 
 // Catching Cone Teensy <-> Host

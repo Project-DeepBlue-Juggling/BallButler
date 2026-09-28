@@ -19,6 +19,8 @@
 
 namespace Physics {
   constexpr float GRAVITY_MPS2 = 9.806f;
+  constexpr float JUGGLING_BALL_MASS_KG = 0.071f;
+  constexpr float JUGGLING_BALL_RADIUS_MM = 37.0f;
 }
 
 // ==========================================================================
@@ -61,7 +63,7 @@ namespace Geometry {
   constexpr float LEG_STROKE_MM = 280.0f;
   constexpr float ARM_RADIUS_MM = 70.0f;
   constexpr float ARM_HEIGHT_FROM_PLATFORM_MM = 210.25f;
-  constexpr float HAND_STROKE_MM = 355.0f;
+  constexpr float HAND_STROKE_MM = 344.75f;
   constexpr float HAND_RADIUS_MM = 35.0f;
   constexpr float HAND_AXIS_BOTTOM_OFFSET_MM = -129.0f;
   constexpr float BALL_JOINT_OFFSET_MM = 0.0f;
@@ -84,7 +86,8 @@ namespace Geometry {
   constexpr float INIT_LEG_LENGTHS_MM[6] = {648.419f, 648.419f, 648.419f, 648.419f, 648.419f, 648.419f};
   constexpr float MM_TO_REV[6] = {0.01418332f, 0.01419076f, 0.01408956f, 0.01418684f, 0.01426801f, 0.01424951f};
   constexpr float LEG_MOTOR_MAX_POSITION_REVS = 4.2f;
-  constexpr float HAND_MOTOR_MAX_POSITION_REVS = 11.1f;
+  constexpr float HAND_MOTOR_HARD_STOP_REVS = 10.701f;
+  constexpr float HAND_CLIP_MARGIN_REV = 0.2f;
 }
 
 // ==========================================================================
@@ -150,17 +153,23 @@ namespace JBOp {
   constexpr float DEFAULT_ACTIVE_Z_MM = 170.0f;
   constexpr float HAND_CATCH_PRIME_REV = 9.9594f;
   constexpr float HAND_RETRACT_REV = 0.0f;
-  constexpr float CATCH_VEL_SCALE_DEFAULT = 0.8f;
+  constexpr float CATCH_VEL_SCALE_DEFAULT = 0.9f;
   constexpr bool RELOAD_PLATFORM_OPEN_LOOP = true;
   constexpr const char* TOSS_TIER = "8b";
   constexpr float TOSS_RELEASE_LATENCY_MS = 0.0f;
+  constexpr bool TOSS_ILC_ENABLED = false;
   constexpr float TOSS_FLIGHT_TIME_DEFAULT_S = 0.8f;
-  constexpr float TOSS_MAX_DISPLACEMENT_MM = 150.0f;
   constexpr bool TOSS_STAY_AT_POSE_ON_CAUGHT = true;
-  constexpr bool TOSS_REQUIRE_BALL_EVIDENCE = false;
+  constexpr bool TOSS_PIPELINE_ENABLED = true;
+  constexpr bool TOSS_REQUIRE_BALL_EVIDENCE = true;
   constexpr float TOSS_SESSION_DWELL_DEFAULT_S = 6.0f;
-  constexpr float TOSS_SESSION_DWELL_MARGIN_S = 0.6f;
+  constexpr float TOSS_SESSION_DWELL_MARGIN_S = 0.087f;
   constexpr uint32_t TOSS_SESSION_MAX_THROWS = 20u;
+  constexpr uint32_t TOSS_SESSION_MAX_RELOADS = 3u;
+  constexpr uint32_t TOSS_SESSION_FLOOR_PAUSE_EVERY = 5u;
+  constexpr uint32_t TOSS_SESSION_DWELL_TILT_READS = 8u;
+  constexpr float TOSS_SESSION_DWELL_TILT_GAP_S = 0.15f;
+  constexpr bool UNIFIED_CYCLE_ENABLED = true;
   constexpr float TARGET_REACHED_POS_TOL_REV = 0.01f;
   constexpr float TARGET_REACHED_VEL_TOL_RPS = 0.1f;
   constexpr float GENTLE_MOVE_VEL_LIMIT_RPS = 2.5f;
@@ -169,7 +178,7 @@ namespace JBOp {
   constexpr float SHUTDOWN_STOW_TIMEOUT_S = 15.0f;
   constexpr float MAX_VALID_TILT_RAD = 0.785f;
   constexpr float INCLINOMETER_OFFSET_DEG[2] = {-0.6f, -0.2f};
-  constexpr float LEVELLING_SETTLE_S = 0.5f;
+  constexpr float LEVELLING_SETTLE_S = 1.0f;
   constexpr float MAX_POSITION_STEP_REV = 0.3f;
 }
 
@@ -184,6 +193,10 @@ namespace TrajOp {
   constexpr float LEG_VEL_CEILING_MMPS = 5000.0f;
   constexpr float LEG_ACC_CEILING_MMPS2 = 5000.0f;
   constexpr float LEG_JERK_CEILING_MMPS3 = 200000.0f;
+  constexpr float HAND_VEL_LIMIT_RPS = 200.0f;
+  constexpr float HAND_VEL_CEILING_RPS = 300.0f;
+  constexpr float HAND_ACC_LIMIT_RPS2 = 3500.0f;
+  constexpr float HAND_ACC_CEILING_RPS2 = 3900.0f;
   constexpr float KNOT_DT_S = 0.025f;
   constexpr float MIN_MOVE_DURATION_S = 0.2f;
   constexpr float MIN_TIMED_LEAD_S = 0.25f;
@@ -195,6 +208,8 @@ namespace TrajOp {
   constexpr float CATCH_REACH_ENVELOPE_MM = 80.0f;
   constexpr float CATCH_SEAT_RATE_RADPS = 0.0f;
   constexpr bool RETIME_MODEL = false;
+  constexpr bool UNIFIED_Z_FLOAT_ENABLED = false;
+  constexpr float UNIFIED_Z_BAND_MM = 30.0f;
 }
 
 // ==========================================================================
@@ -230,9 +245,32 @@ namespace TeensyTraj {
   constexpr float QUINTIC_H_MAX = 0.19753086f;
   constexpr float QUINTIC_H2_MAX = 3.940234f;
   constexpr float SMOOTH_MOVE_V0_DEADBAND_RPS = 6.0f;
-  constexpr float SMOOTH_MOVE_EXCURSION_MARGIN_REV = 0.5f;
+  constexpr float SMOOTH_MOVE_EXCURSION_MARGIN_REV = 0.2f;
   constexpr float MIN_EVENT_VEL_MPS = 0.3f;
   constexpr float MAX_EVENT_VEL_MPS = 7.0f;
+}
+
+// ==========================================================================
+// Hand Throw Envelope
+// ==========================================================================
+
+namespace HandEnv {
+  constexpr float END_STOP_MARGIN_REV = 0.2f;
+  constexpr float MEASURED_COAST_REV[3][2] = {
+    {3.142f, 0.1342f},
+    {3.714f, 0.2119f},
+    {4.436f, 0.226f},
+  };
+  constexpr float COAST_EXTRAPOLATION_EXPONENT = 2.0f;
+  constexpr float DECEL_FF_CURRENT_HEADROOM_FRAC = 0.85f;
+  constexpr float MEASURED_REFLECTED_INERTIA_KGM2 = 1.05e-05f;
+  constexpr float ARM_WINDOW_MARGIN_S = 0.05f;
+  constexpr float DC_BUS_NOMINAL_V = 45.0f;
+  constexpr float REGEN_RAIL_CAPACITY_W = 300.0f;
+  constexpr float HAND_TORQUE_CONSTANT_NM_PER_A = 0.0055133f;
+  constexpr float HAND_TORQUE_SOFT_LIMIT_NM = 0.7f;
+  constexpr float GRAVITY_HOLD_CURRENT_A = 1.5f;
+  constexpr float REGEN_CURRENT_LIMIT_A = 8.0f;
 }
 
 // ==========================================================================
@@ -494,6 +532,9 @@ namespace JBBallDetect {
   constexpr uint32_t MAX_MISSING_SAMPLES = 5u;
   constexpr uint32_t CHECK_TIMEOUT_MS = 100u;
   constexpr uint32_t EXPECTED_FW[3] = {0, 6, 11};
+  constexpr float ARRIVAL_LEAD_S = 0.2f;
+  constexpr float ARRIVAL_WINDOW_S = 1.5f;
+  constexpr float RETENTION_WINDOW_S = 1.5f;
 }
 
 // ==========================================================================

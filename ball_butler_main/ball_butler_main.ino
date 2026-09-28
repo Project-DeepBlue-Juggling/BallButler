@@ -19,6 +19,7 @@
 #include "Trajectory.h"
 #include "Proprioception.h"
 #include "StateMachine.h"
+#include "FwUpdate.h"
 #include <stdarg.h>
 
 // ============================================================================
@@ -65,6 +66,10 @@ bool handleSmoothCmd(const char* line);
 // SETUP
 // ============================================================================
 void setup() {
+  // First, so a firmware-update frame arriving during the boot waits below is
+  // handled rather than dereferencing unattached hardware.
+  FwUpdate::attach(canif, pitch, yawAxis, stateMachine, streamer);
+
   Serial.begin(OpCfg::SERIAL_BAUD);
   
   // Wait for Serial, but with a shorter timeout and non-blocking approach
@@ -84,6 +89,7 @@ void setup() {
     Serial.println(F("\n========================================"));
     Serial.println(F("       Ball Butler - Starting Up"));
     Serial.println(F("========================================\n"));
+    Serial.printf("[boot] %s v%u\n", FwUpdate::FW_NAME, (unsigned)FwUpdate::FW_VERSION);
   }
 
   Proprioception::setDebugStream(&Serial, false);
@@ -135,10 +141,15 @@ void setup() {
 // ============================================================================
 void loop() {
   canif.loop();
-  pitch.loop();
-  streamer.tick();
+  pitch.loop();        // keeps running in a firmware-update session: the park raises pitch
+  FwUpdate::tick();    // park progression + abandoned-session reboot
   Proprioception::flushDebug();
-  stateMachine.update();
+  if (!FwUpdate::sessionOpen()) {
+    // Frozen while a firmware-update session is open (FwUpdate.h): the robot is
+    // parked, and every session ends in a reboot, so nothing here resumes.
+    streamer.tick();
+    stateMachine.update();
+  }
 
   static char serialBuf[128];
   static uint8_t serialLen = 0;
@@ -147,7 +158,11 @@ void loop() {
     if (c == '\n' || c == '\r') {
       if (serialLen > 0) {
         serialBuf[serialLen] = '\0';
-        routeCommand(serialBuf);
+        if (FwUpdate::sessionOpen()) {
+          Serial.println(F("[fwupd] session open — serial commands ignored until the reboot"));
+        } else {
+          routeCommand(serialBuf);
+        }
       }
       serialLen = 0;
     } else if (serialLen < sizeof(serialBuf) - 1) {
