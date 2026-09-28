@@ -9,7 +9,7 @@ related_entries:
 files_changed:
   - ball_butler_main/FwUpdate.h (new)
   - ball_butler_main/FwUpdate.cpp (new)
-  - ball_butler_main/FwUpdate.h (FW_VERSION 1 -> 2, the first CAN-flashed image)
+  - ball_butler_main/FwUpdate.h (FW_VERSION 1 -> 2 -> 3 -> 4, receipts for each CAN flash)
   - ball_butler_main/FwUpdate.h (FW_VERSION 2 -> 3, receipt for the faster transfer)
   - ball_butler_main/CanInterface.cpp
   - ball_butler_main/BallButlerConfig.h
@@ -153,6 +153,16 @@ VERIFY OK `0x1070D8A7`, **`Ball Butler FW version: 2 -> 3`**, **56.25 s total** 
 RPC UDP socket queues one packet, so the transfer is bounded at one frame per ~1 ms
 bridge tick until a bridge FW raises that queue. BB's USB was not attached this
 sitting. The copy/COMMIT path was untouched, so its risk was the FW 2 flash's.
+
+## Addendum 2026-09-28 (afternoon) — FW 4 over CAN in 36 s
+
+Can-bridge FW 22 deepened its RPC socket's receive queue from 1 to 8 (Jugglebot
+entry `2026-09-28-bb-firmware-over-can-relay`, afternoon addendum), which let the host
+pipeline DATA 4 frames deep. `--verify-only`: DATA 25.3 s, 0 rewinds, VERIFY OK. Then
+**FW 4 over CAN** (`pio run -e teensy40_can -t upload`, no code change, the receipt):
+DATA 25.3 s, 0 rewinds / retries / missing acks, VERIFY OK `0x9A8BC5D5`, COMMIT OK,
+**`3 -> 4`, 36.22 s total**, down from 75.84 s for the first CAN flash. The receiver
+firmware is unchanged; only the bridge and host moved.
 
 ## Open Questions / Follow-ups
 
