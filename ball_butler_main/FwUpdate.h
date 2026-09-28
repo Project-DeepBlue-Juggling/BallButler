@@ -73,7 +73,8 @@ namespace FwUpdate {
 // INFO reply is the only receipt that a COMMIT landed. Jugglebot pins the
 // expected value in teensy_link/rpc_args.py BB_FW_VERSION_EXPECTED.
 constexpr char     FW_NAME[]  = "ballbutler-main";
-constexpr uint16_t FW_VERSION = 1;   // 1: 2026-09-28 first image with the CAN receiver (USB-flashed)
+constexpr uint16_t FW_VERSION = 2;   // 1: 2026-09-28 first image with the CAN receiver (USB-flashed)
+                                     // 2: 2026-09-28 no code change — the first CAN-flashed image; the version is the receipt
 
 // Wire the receiver to the hardware it parks. Call first thing in setup(),
 // before canif.begin(): until attached, every command is ignored.

@@ -9,6 +9,7 @@ related_entries:
 files_changed:
   - ball_butler_main/FwUpdate.h (new)
   - ball_butler_main/FwUpdate.cpp (new)
+  - ball_butler_main/FwUpdate.h (FW_VERSION 1 -> 2, the first CAN-flashed image)
   - ball_butler_main/CanInterface.cpp
   - ball_butler_main/BallButlerConfig.h
   - ball_butler_main/ball_butler_main.ino
@@ -23,7 +24,7 @@ external_changes:
   - "Jugglebot: tools/teensy_link_bridge.py (--fw-update --target bb)"
   - "Jugglebot: tests/firmware/test_bb_fw_update_xref.py + native/teensy_link tests"
   - "Jugglebot logbook: 2026-09-28-bb-firmware-over-can-relay"
-  - "Jugglebot commit: a229edd (mvp-trajectory-bringup)"
+  - "Jugglebot commits: a229edd, 4ad301b (mvp-trajectory-bringup)"
 subsystem:
   - firmware
   - tooling
@@ -43,8 +44,10 @@ can-bridge's new `BB_FW_*` relay (CAN1 0x7D6/0x7D7) into `ball_butler_main/FwUpd
 The receiver is the Platform Teensy's (Jugglebot, flashed Platform FW 6 over CAN on
 2026-09-09), ported nearly verbatim. The one real addition is a **park** before any
 flash is touched: yaw e-stopped, pitch raised to ≥ 80° if it is lower, then the pitch
-and hand ODrives set IDLE. Every session ends in a reboot. **BB FW 1 and can-bridge
-FW 21 are BUILT, NOT FLASHED**; the park is the part only hardware can prove.
+and hand ODrives set IDLE. Every session ends in a reboot. **Flown 2026-09-28:** bridge FW 21 and BB FW 1
+over USB, a clean `--verify-only`, then **BB FW 2 over CAN (INFO 1 → 2, 75.8 s,
+0 rewinds)**. The park's pitch-raise branch is still unexercised (pitch was already
+stowed both times).
 
 ## Motivation
 
@@ -120,14 +123,30 @@ on any wire before this; it is the receipt that a COMMIT landed.
 - **Not yet on hardware.** The park sequence, the heartbeat-confirmed IDLE and the
   real transfer are unexercised.
 
+## Addendum 2026-09-28 — flown
+
+Receipts (full detail + logs in the Jugglebot entry's addendum):
+- Bridge FW 21 over USB → `BRIDGE_IDENTITY fw_version=21`.
+- BB FW 1 over USB (`pio run -e teensy40 -t upload`, md5 `6486f041…`) → `BB_FW_INFO` over
+  CAN returned **1**.
+- `--verify-only` 11:30: park from IDLE with pitch at 89.9° → axes idled and yaw
+  e-stopped at +1.2 s, BEGIN OK (staging `0x60028000..0x601F0000`, 1824 KB free),
+  DATA 61.0 s with 0 rewinds, VERIFY OK `0x7AE1BDEB`, then at +60 s "session idle 60 s —
+  aborted — rebooting"; BB came back IDLE, hand homed, ball in hand. **The
+  reboot-ends-every-session rule behaved as designed.**
+- CAN flash 11:34 (`pio run -e teensy40_can -t upload`, FW 1 → 2, no code change):
+  VERIFY OK `0x25386A01`, COMMIT OK, **`Ball Butler FW version: 1 -> 2`**, 75.8 s total,
+  0 rewinds; console `[boot] ballbutler-main v2`, homing successful, BOOT → IDLE.
+- Unexplained, instrument-side: the USB console delivered no `[fwupd]` lines during the
+  CAN flash (it did during the rehearsal). The receipts do not depend on it.
+
 ## Open Questions / Follow-ups
 
-- **Bring-up sitting (operator):** (1) USB-flash can-bridge FW 21; (2) USB-flash BB
-  FW 1 (`pio run -e teensy40 -t upload`), the first image with the receiver; (3) with
-  the ROS launch down: `--dry-run`, then `--verify-only` (watch the park: pitch rises
-  if below 80°, then pitch + hand go IDLE, yaw limp; BB reboots ~60 s after VERIFY);
-  (4) bump `FW_VERSION` to 2 (and Jugglebot `BB_FW_VERSION_EXPECTED`) and
-  `pio run -e teensy40_can -t upload`. Expect `Ball Butler FW version: 1 -> 2`.
+- **Exercise the pitch-raise park:** with BB IDLE, lower pitch below 80° from the USB
+  console (the serial pitch command; the IDLE handler then holds it CLOSED_LOOP
+  because it is below the stow angle) and run `--verify-only`. A GUI manual aim does
+  not work for this: it puts BB in TRACKING, which BEGIN refuses. Expect PARKING polls for a few seconds while pitch rises to 90°,
+  then the IDLE confirmation. This is the only park branch not yet seen on hardware.
 - The common park is from IDLE, where BB already rests pitch IDLE at ≥ 80°, so it
   only idles the hand. A park from ERROR with a faulted pitch ODrive below 80°
   cannot raise pitch; it answers PARK_FAILED and reboots, and USB is the path then.
