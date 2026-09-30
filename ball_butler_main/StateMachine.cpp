@@ -1011,7 +1011,8 @@ bool StateMachine::executeThrow_(float yaw_deg, float pitch_deg,
   bool ok = streamer_.arm(config_.hand_node_id, traj_buffer_,
                           traj_count_, throw_wall_us,
                           /*require_settled=*/true, &yaw_, config_.pitch_node_id,
-                          AxisSettleCfg::YAW_ERR_TOL_DEG, AxisSettleCfg::YAW_RATE_TOL_DPS);
+                          AxisSettleCfg::YAW_ERR_TOL_DEG, AxisSettleCfg::YAW_RATE_TOL_DPS,
+                          AxisSettleCfg::YAW_SETTLED_MIN_SAMPLES);
 
   debugf_("[SM] Throw armed: frames=%u, ready_time=%.2f s, lead=%.1f ms, %s\n",
           (unsigned)traj_count_, planner_.lastTimeToReadyS(),

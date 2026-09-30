@@ -62,7 +62,11 @@ public:
     float   vel_rps_raw;      // Raw (unfiltered) velocity for debugging
     float   cmd_deg;          // Commanded target position in degrees
     float   err_deg;          // Position error in degrees (cmd - pos, via valid path)
-    
+    uint16_t settled_samples; // Consecutive control samples (150 Hz) with
+                              // |err_deg| <= AxisSettleCfg::YAW_ERR_TOL_DEG,
+                              // saturating; 0 after a sample outside it or a
+                              // hard-limit fault. Layer C's settle history.
+
     // Control signals
     float   u;                // Raw PID output (before slew limiting)
     float   u_slew;           // PID output after slew rate limiting
@@ -596,6 +600,7 @@ private:
   volatile float   last_u_preDZ_     = 0.0f;
   volatile float   last_u_slew_      = 0.0f;
   volatile float   last_err_deg_     = 0.0f;
+  volatile uint16_t settled_samples_ = 0;      // ISR-owned; see Telemetry::settled_samples
   volatile float   sd_accum_         = 0.0f;
 
   // Encoder state

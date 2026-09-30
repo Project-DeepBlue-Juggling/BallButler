@@ -24,6 +24,7 @@ struct HandTrajectoryStreamer {
   uint32_t  pitch_node_ = 0;
   float     yaw_err_tol_ = 0.0f;
   float     yaw_rate_tol_ = 0.0f;
+  uint16_t  yaw_settled_min_ = 0;  // required YawAxis::Telemetry::settled_samples
   bool      aborted_ = false;  // last arm aborted by the settle gate (no frames sent)
 
   explicit HandTrajectoryStreamer(CanInterface& c) : can(c) {}
@@ -34,14 +35,19 @@ struct HandTrajectoryStreamer {
   //   • For "decel at absolute time T": pass T (in µs)
   // Layer C (throws only): pass require_settled=true with the yaw axis, pitch node
   //   id and tolerances; the streamer confirms the platform is settled before it
-  //   sends the first (wind-up) frame, and aborts cleanly if not.
+  //   sends the first (wind-up) frame, and aborts cleanly if not. The yaw settle
+  //   rule (error history + traverse-rate bound) is documented at AxisSettleCfg
+  //   in BallButlerConfig.h; yaw_settled_min_samples defaults to that value so a
+  //   caller that omits it still gets the history term (fail-closed).
   bool arm(uint32_t node_id, const TrajFrame* f, size_t count, uint64_t time_offset_us = 0,
            bool require_settled = false, YawAxis* yaw = nullptr, uint32_t pitch_node = 0,
-           float yaw_err_tol_deg = 0.0f, float yaw_rate_tol_dps = 0.0f) {
+           float yaw_err_tol_deg = 0.0f, float yaw_rate_tol_dps = 0.0f,
+           uint16_t yaw_settled_min_samples = AxisSettleCfg::YAW_SETTLED_MIN_SAMPLES) {
     if (!f || count == 0) return false;
     node = node_id; frames = f; n = count; idx = 0; this->t_offset_us = time_offset_us;
     require_settled_ = require_settled; yaw_ = yaw; pitch_node_ = pitch_node;
     yaw_err_tol_ = yaw_err_tol_deg; yaw_rate_tol_ = yaw_rate_tol_dps;
+    yaw_settled_min_ = yaw_settled_min_samples;
     aborted_ = false;
 
     if (!can.isAxisHomed(node_id)) {
@@ -84,9 +90,14 @@ struct HandTrajectoryStreamer {
         const bool pitch_done = can.getAxisHeartbeat(pitch_node_, hb) &&
                                 hb_age_us < AxisSettleCfg::PITCH_HB_FRESH_US &&
                                 hb.trajectory_done;
+        // Yaw: the error must have HELD inside the band for the last
+        // yaw_settled_min_ control samples (history counted in the 150 Hz ISR,
+        // so encoder dither on a settled axis cannot fail it), be inside it
+        // now, and the rate must be under the TRAVERSE bound. See AxisSettleCfg.
         YawAxis::Telemetry yt = yaw_ ? yaw_->readTelemetry() : YawAxis::Telemetry{};
         const float yaw_rate_dps = yt.vel_rps * 360.0f;
         const bool yaw_ok = (yaw_ != nullptr) &&
+                            yt.settled_samples >= yaw_settled_min_ &&
                             fabsf(yt.err_deg) <= yaw_err_tol_ &&
                             fabsf(yaw_rate_dps) <= yaw_rate_tol_;
         if (!(pitch_done && yaw_ok)) {
@@ -94,10 +105,11 @@ struct HandTrajectoryStreamer {
                           : (!pitch_done ? "PITCH" : "YAW");
           if (Serial) Serial.printf(
               "[Gate] Throw ABORTED — %s not settled: pitch_state=%lu err=0x%lx done=%d "
-              "hb_age=%lu ms | yaw_err=%.2f rate=%.1f (tol %.1f,%.1f)\n",
+              "hb_age=%lu ms | yaw_err=%.2f rate=%.1f settled=%u/%u (tol %.1f,%.1f)\n",
               who, (unsigned long)hb.axis_state, (unsigned long)hb.axis_error,
               (int)pitch_done, hb_age_ms,
               (double)yt.err_deg, (double)yaw_rate_dps,
+              (unsigned)yt.settled_samples, (unsigned)yaw_settled_min_,
               (double)yaw_err_tol_, (double)yaw_rate_tol_);
           // Loud channel: terminal abort outcome. detail0 = binding axis
           // (0=YAW, 1=PITCH, 2=BOTH); detail1 = yaw error (centidegrees).

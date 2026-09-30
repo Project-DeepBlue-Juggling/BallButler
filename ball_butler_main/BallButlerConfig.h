@@ -287,7 +287,7 @@ namespace OpCfg {
 
 // ============================================================================
 // 12b. Axis-Settled Gate (Layers A + C) — firmware-local, not codegen-sourced.
-//      Tune here. See logbook 2026-06-19 (loud + on-aim throw gates).
+//      Tune here. See logbook 2026-06-21 (loud + on-aim throw gates).
 // ============================================================================
 namespace AxisSettleCfg {
   // Layer A (predictive, in requestThrow): conservative worst-case yaw traverse
@@ -303,11 +303,46 @@ namespace AxisSettleCfg {
   // wind-up, so this is a fixed conservative figure (operator-measured ~0.6 s).
   constexpr float WINDUP_DURATION_S = 0.6f;
 
-  // Layer C (confirm, in the streamer at fire time): yaw is "settled" when its
-  // angle error AND rate are both within these bounds. Pitch settle uses the
-  // ODrive trap-traj `trajectory_done` flag (no tolerance needed).
-  constexpr float YAW_ERR_TOL_DEG  = 1.0f;
-  constexpr float YAW_RATE_TOL_DPS = 3.0f;
+  // Layer C (confirm, in the streamer at fire time): yaw is "settled" when
+  //   (a) |angle error| has been <= YAW_ERR_TOL_DEG for the last
+  //       YAW_SETTLED_MIN_SAMPLES consecutive 150 Hz control samples (the
+  //       history is counted in YawAxis::controlISR, read as
+  //       Telemetry::settled_samples), AND
+  //   (b) the instantaneous filtered |rate| is <= YAW_RATE_TOL_DPS.
+  // Pitch settle uses the ODrive trap-traj `trajectory_done` flag (no
+  // tolerance needed).
+  //
+  // Why two terms (FW 5, 2026-09-30). The rate is a 150 Hz finite difference
+  // of the AS5047P (16384 CPR): one count between samples is 3.296 deg/s raw,
+  // ~0.99 deg/s after the 0.3 EMA. The pure-P loop holds a settled yaw on a
+  // friction-limited offset with sigma-delta deadzone kicks, and a kick of
+  // >= 4 counts in one sample (or 2 counts in two adjacent samples) is enough
+  // to cross the old 3.0 deg/s bound: 4 of 5 NOT_SETTLED refusals on
+  // 2026-09-30 sat on a flat < 0.4 deg plateau (10 Hz bag) at 0.26-0.48 deg
+  // error, i.e. settled axes refused on dither. So the rate term no
+  // longer decides "settled" (the history does) — it only catches a TRAVERSE,
+  // and sits where the dither cannot reach it: 12 deg/s = 3.64 counts every
+  // sample sustained, or a single-sample kick of >= 13 counts (0.29 deg).
+  //
+  // What each term refuses. A traverse crossing the 2 deg band at 60 deg/s
+  // (Layer A's rate) spends 33 ms = 5 samples in it, so (a) refuses it; any
+  // monotonic traverse faster than 20 deg/s cannot stay in the band 100 ms, so (a)
+  // refuses it too; a slower one still moving > 12 deg/s is refused by (b).
+  //
+  // Worst-case aim budget at 1.1 m, counting the rate as held for the whole
+  // WINDUP_DURATION_S (the 2026-09-30 report's Q4 convention):
+  //   error term  1.0 deg                   -> 1100*tan(1.0) =  19.2 mm
+  //   rate term  12 deg/s * 0.6 s = 7.2 deg -> 1100*tan(7.2) = 139.0 mm
+  //   both        8.2 deg                   -> 1100*tan(8.2) = 158.5 mm
+  //   (FW <= 4, 3 deg/s: 1.8 deg -> 34.6 mm; with the error term 2.8 deg ->
+  //   53.8 mm.) This is a ceiling, not an operating figure: holding 12 deg/s
+  //   for 0.6 s after 100 ms inside +-1 deg of the command means travelling
+  //   7.2 deg PAST the target against the P loop, i.e. a controller failure.
+  //   A yaw converging onto its target shrinks |err| through the wind-up, so
+  //   its release error is bounded by the error term (<= 19.2 mm).
+  constexpr float    YAW_ERR_TOL_DEG         = 1.0f;
+  constexpr float    YAW_RATE_TOL_DPS        = 12.0f;   // FW <= 4: 3.0
+  constexpr uint16_t YAW_SETTLED_MIN_SAMPLES = 15;      // 100 ms at 150 Hz
 
   // Layer A re-engage reserve: extra lead required when pitch isn't already
   // CLOSED_LOOP + settled at queue time. DORMANT (0.0) until sized from the

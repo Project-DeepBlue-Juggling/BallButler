@@ -84,6 +84,7 @@ void YawAxis::begin(float loopHz) {
   sd_accum_         = 0.0f;
   last_u_slew_      = 0.0f;
   last_err_deg_     = 0.0f;
+  settled_samples_  = 0;   // the settle history starts at the first ISR sample
   estop_            = false;
   hard_limit_fault_ = false;
   enabled_          = false;
@@ -584,6 +585,7 @@ YawAxis::Telemetry YawAxis::readTelemetry() const {
   t.vel_rps_raw      = vel_rps_raw_;
   t.cmd_deg          = cmd_pos_deg_;
   t.err_deg          = last_err_deg_;
+  t.settled_samples  = settled_samples_;
   t.u                = last_u_preDZ_;
   t.u_slew           = last_u_slew_;
   t.pwm              = last_pwm_cmd_;
@@ -797,7 +799,10 @@ void YawAxis::controlISR() {
     last_u_preDZ_ = 0.0f;
     last_u_slew_ = 0.0f;
     last_err_deg_ = 0.0f;
-    
+    // last_err_deg_ = 0 above is a placeholder, not a measurement: a faulted
+    // axis is never "settled" (Layer C fails closed on it).
+    settled_samples_ = 0;
+
     // Fire callback and return
     if (proprio_cb_) {
       proprio_cb_(pos_deg_, vel_rps_, micros64());
@@ -812,7 +817,19 @@ void YawAxis::controlISR() {
   // that aren't wrapped to [0, 360), this gives the correct direct path.
   float err_deg = cmd_pos_deg_ - pos_deg_;
   last_err_deg_ = err_deg;
-  
+
+  // Layer C settle history: consecutive samples inside the settle band
+  // (AxisSettleCfg, BallButlerConfig.h 12b). Counted every sample, before the
+  // enable/deadband branch, so a parked-in-tolerance axis keeps counting.
+  // Saturates instead of wrapping, so a long-settled axis never reads 0.
+  if (fabsf(err_deg) <= AxisSettleCfg::YAW_ERR_TOL_DEG) {
+    if (settled_samples_ < UINT16_MAX) {
+      settled_samples_ = (uint16_t)(settled_samples_ + 1u);
+    }
+  } else {
+    settled_samples_ = 0;
+  }
+
   float err_rev = err_deg * DEG2REV;
   
   // =========================================================================
