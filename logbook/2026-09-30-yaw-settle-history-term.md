@@ -35,7 +35,7 @@ by encoder dither on an already-settled axis crossing the old instantaneous
 `YAW_RATE_TOL_DPS = 3.0` bound, not by real motion. FW 5 adds a 15-sample (100 ms at
 150 Hz) in-band error history alongside a widened 12 deg/s rate bound, so a settled
 axis's dither can no longer trip the gate while a genuine traverse still does. Built
-(2026-09-30, 18:31, SUCCESS in 5.04 s) but not yet flashed. The investigation's own
+(2026-09-30, 18:31, SUCCESS in 5.04 s) and flashed over CAN at 22:45 (receipt 4 -> 5). The investigation's own
 starting premise, that the fifth refusal (throw #1) was a distinct late-convergence
 case the fix must still catch, does not survive a 150 Hz replay of its own trace: see
 Discussion.
@@ -202,10 +202,11 @@ than 8 deg/s, and on fast arrivals it first passes 93 ms after band entry agains
 FW 4's 67 to 80 ms, up to 26 ms stricter there. Probe C is the throw #1 replay in
 Discussion.
 
-**Flash status: NOT YET FLASHED.** Procedure (unchanged from FW 1 through 4): launch
-down, BB in IDLE or ERROR, `cd ~/Desktop/BallButler/ball_butler_main` then `pio run -e
-teensy40_can -t upload` on its own line. The receipt to look for is the fw-update
-tool's `FW version: 4 -> 5` line; a matching hex md5 alone is not a flash receipt.
+**Flash status: FLASHED 2026-09-30 22:45.** Flashed 2026-09-30 22:45 by Claude over CAN with the worktree's tool (the BB build's `pio` upload hook calls the MAIN checkout's `tools/teensy_link_bridge.py`, which is on `mvp-trajectory-bringup` at protocol 6 and dark against the protocol-9 bridge): `python tools/teensy_link_bridge.py --fw-update .../teensy40_can/firmware.hex --target bb`, a `--verify-only` rehearsal first (DATA 26.3 s, VERIFY OK, COMMIT withheld), then the real run: FW version before 4, BEGIN OK (BB parked, pitch 89.8 deg), DATA 163 840 B in 25.7 s (0 rewinds, 0 window retries, 0 missing acks), VERIFY OK crc32 0xF292D1C1, COMMIT OK, receipt **`Ball Butler FW version: 4 -> 5`** at 22:45:45 (log `Jugglebot-skills/temp/logs/bb_fw5_flash_20260930_2242.log`).
+Note for the next flash: `pio run -e teensy40_can -t upload` is NOT safe until
+`platformio.ini`'s upload hook is repointed (it names `../../Jugglebot/tools/
+teensy_link_bridge.py`, the main checkout, protocol 6); drive the skill-stack worktree's
+copy directly as above.
 
 **What to watch at the next sitting.** Count `THROW_ABORTED_NOT_SETTLED` on
 `/bb/throw_outcome` against this sitting's baseline of 5/19 (4 on plateaus, 1 on
@@ -219,8 +220,9 @@ hardware; if a residual refusal rate persists after the flash, capture
 
 ## Open Questions / Follow-ups
 
-1. **Flash and confirm the receipt.** Not yet flashed; flash before the next sitting
-   and confirm the fw-update tool's `FW version: 4 -> 5` line.
+1. **Flashed and confirmed** (2026-09-30 22:45, receipt `FW version: 4 -> 5`). Open in
+   its place: repoint `platformio.ini`'s `upload_command` at a checkout on the bridge's
+   protocol (today the skill-stack worktree), since the main checkout's tool is dark.
 2. **Layer A follow-up: the 100 ms dwell eats the schedule margin.** The new history
    term's 100 ms dwell inside tolerance is not reserved anywhere in Layer A's lead
    calculation; it eats into the 0.1 s `SCHEDULE_MARGIN_S` Layer A already reserves
