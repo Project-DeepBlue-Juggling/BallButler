@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = 'bb-local-calibration-v1'
+DEFAULT_REFILL_EVERY = 9
 DEFAULT_CORE = [-62.5, 62.5, 0.0, 0.0]  # Oct 4 sitting 4, schedule-frame mm
 TOPICS = ['/mocap_data', '/rigid_body_poses', '/bb/calibration_result',
           '/bb/heartbeat', '/bb/axis_estimates', '/orchestrator_state',
@@ -44,6 +45,11 @@ def write_json(path, value):
 
 def finite(values):
     return all(math.isfinite(float(v)) for v in values)
+
+
+def refill_due(next_throw_index, batch_size=DEFAULT_REFILL_EVERY):
+    """Initial ready prompt, then refill before each new batch of nine throws."""
+    return next_throw_index % batch_size == 0
 
 
 def flight_capture(release_position, release_velocity, catch_tof, ground_z, gravity=9806.0):
@@ -372,7 +378,7 @@ def run(args):
         for selected_idx,entry in enumerate(selected):
             # An initial ready prompt and then explicit collection intervals.
             # No refill throws are allowed in the intervening automatic block.
-            if selected_idx % args.refill_every == 0:
+            if refill_due(selected_idx,args.refill_every):
                 operator_pause()
             spin_until(ready,args.timeout,'BB ready after reload, fresh mocap, and idle orchestrator')
             cache['mocap_max_gap']=0.
@@ -488,7 +494,7 @@ def main():
     p.add_argument('--s',type=float,default=105.65,help='corrected signed lateral offset in production solver convention')
     p.add_argument('--delay',type=float,default=3.)
     p.add_argument('--pause',type=float,default=1.,help='observation time after predicted landing before another command')
-    p.add_argument('--refill-every',type=int,default=1,help='pause for refill and Enter after N throws; never refill during an automatic block')
+    p.add_argument('--refill-every',type=int,default=DEFAULT_REFILL_EVERY,help='pause for refill and Enter after N throws (default: 9); never refill during an automatic block')
     p.add_argument('--refill-settle',type=float,default=1.,help='additional settling seconds after Enter')
     p.add_argument('--ground-z',type=float,default=0.,help='ground height in QTM world mm, for minimum wait before REFILL prompt')
     p.add_argument('--timeout',type=float,default=60.,help='maximum wait for preflight/reload, seconds')

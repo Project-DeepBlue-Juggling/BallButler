@@ -129,11 +129,12 @@ ROS and recording alive during the pause, waits one further settling second,
 checks BB readiness, and only then sends the next throw. There is no timeout
 on the refill pause. `q` + Enter stops the run with partial data retained.
 
-By default this prompt appears before the first throw and between every pair
-of throws (`--refill-every 1`). To throw a batch from a full magazine before
-pausing, use e.g. `--refill-every 5`, but **do not toss refill balls during
-that automatic batch**, even after one ball has grounded: wait for `REFILL`.
-The per-throw prompt is the recommended mode for routinely returning balls.
+By default this prompt appears before the first throw and **after every nine
+throws**, before the next batch (`--refill-every 9`). It waits indefinitely
+until you press Enter. **Do not toss refill balls during the automatic batch**,
+even after one ball has grounded: wait for `REFILL`. The final batch may contain
+fewer than nine throws; the session finishes after its last capture without
+another refill prompt. Use `--refill-every` to override the batch size.
 
 Each throw records a distinct `analysis_window_wall_s`, predicted release
 position/velocity, and `capture_complete` flag. Refill start/end times are

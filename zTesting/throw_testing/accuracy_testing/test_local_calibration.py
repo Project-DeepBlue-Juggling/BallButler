@@ -22,6 +22,10 @@ def options(**overrides):
 
 
 class PlanTests(unittest.TestCase):
+    def test_default_refill_pauses_only_between_nine_throw_batches(self):
+        self.assertEqual([i for i in range(29) if calibration.refill_due(i)],[0,9,18,27])
+        self.assertEqual([i for i in range(10) if calibration.refill_due(i,3)],[0,3,6,9])
+
     def test_refill_projectiles_are_excluded_even_on_same_spatial_arc(self):
         session=dict(throws=[dict(throw_idx=7,status='released',capture_complete=True,
                                   analysis_window_wall_s=[100,102])],

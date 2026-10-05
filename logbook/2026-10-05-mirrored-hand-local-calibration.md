@@ -32,14 +32,14 @@ Usage and frame conventions: [local calibration guide](../zTesting/throw_testing
 
 Verification (2026-10-05): `python -m unittest discover -s
 zTesting/throw_testing/accuracy_testing -p test_local_calibration.py -v`:
-15 offline tests pass, including production ballistic round trips. No hardware
+16 offline tests pass, including production ballistic round trips and nine-throw refill batching. No hardware
 was commanded. Jetson DDS/action/MCAP integration and actual calibration
 accuracy remain to be validated with a pilot session.
 
 Before the hardware sitting, the owner clarified that balls are thrown back
 into BB's magazine during calibration. The initial capture-only runner had
 no explicit refill segmentation. Added operator-gated refill intervals (default
-after every throw), continued ROS servicing during unlimited refill waits,
+after every nine throws, as requested by the owner), continued ROS servicing during unlimited refill waits,
 ground-arrival wait, per-throw analysis windows and a timestamp-association
 helper that rejects refill/failed/incomplete/ambiguous intervals. Raw refill
 arcs remain in the MCAP for audit; later extraction must use the windows and
