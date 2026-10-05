@@ -19,6 +19,7 @@ entries, which stay authoritative. Open the `.html` in a browser.
 
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
+| 2026-10-05 | tuned | feature | calibration, tooling | Mirrored-hand simulation and randomized local two-ball calibration capture | [mirrored-hand-local-calibration](2026-10-05-mirrored-hand-local-calibration.md) |
 | 2026-06-23 | tuned | feature | firmware, throwing, tooling | Loud command-outcome channel (CMD_RESULT) + bb/throw ROS2 action — Phase 2; generic firmware→host outcome relay (CAN1→UDP→action); hardware-validated 2026-06-24 (5/5) | [loud-command-outcome-channel-cmd-result](2026-06-23-loud-command-outcome-channel-cmd-result.md) |
 | 2026-06-21 | tuned | feature | firmware, throwing | Throw settle-gates — loud + guaranteed-on-aim throws; Phase 1 (A predictive + C fire-time confirm + serial) hardware-validated; Phase 2 (loud-to-host channel) deferred | [throw-settle-gates-loud-on-aim](2026-06-21-throw-settle-gates-loud-on-aim.md) |
 | 2026-06-18 | resolved | investigation | throwing, firmware, calibration, timing | Temporal accuracy resolved (≈44 ms → <10 ms): aim-correction (spatial) + measured release-latency offset (temporal); kinematic-ID & feedforward root-fixes ruled out | [temporal-accuracy-resolved-fractured-solution](2026-06-18-temporal-accuracy-resolved-fractured-solution.md) |
