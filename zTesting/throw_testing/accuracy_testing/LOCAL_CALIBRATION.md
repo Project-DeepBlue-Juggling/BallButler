@@ -13,10 +13,10 @@ QTM must stream to the normal mocap node, but **a separate QTM recording and
 manual trajectory cleanup are not normally necessary**. Raw markers, BB pose,
 commands, timing windows and firmware outcomes are retained for offline
 trajectory extraction. A QTM recording is an optional backup if streaming loses
-the ball. This tool collects the calibration dataset; it does not fit or deploy
-a replacement affine automatically. The new session JSON is not the legacy
-`fit_affine.py` input schema: use the raw MCAP plus session JSON together for
-the next analysis. Do not substitute predicted/tracker landing positions for
+the ball. After capture, `analyze_local_calibration.py` extracts measured flights
+and fits a replacement affine from the session JSON and raw MCAP. It does not
+deploy that candidate. The new session JSON is not the legacy `fit_affine.py`
+input schema. Do not substitute predicted/tracker landing positions for
 measured raw trajectories.
 
 ## Grid and frame
@@ -153,13 +153,13 @@ estimate, so still check that the ball has actually grounded before refilling.
 `--refill-settle` controls the additional delay after Enter; do not press
 Enter while a return ball is still airborne.
 
-This remains a capture routine, not an automatic trajectory fitter. Raw
-refill markers stay in the bag for audit, excluded by the recorded windows.
-Within a BB window, subsequent analysis must still identify the outbound BB
-arc and descending catch-plane crossing, reject bounces/reflections/occlusion,
-and retain ambiguous cases for review. Do not use an arc-count/order matcher
-over the entire bag. If a refill accidentally overlaps a BB capture, record
-the affected throw number and exclude that capture from the fit.
+Raw refill markers stay in the bag for audit, excluded by the recorded windows.
+The companion analysis identifies launch-associated outbound arcs, fits gravity
+to raw observations and measures the descending catch-plane crossing. Bounces
+below the catch plane cannot enter the fitted arc. Ambiguous trajectories,
+missing crossings and long gaps are rejected and reported. Collect and handle
+balls during refill pauses. If a refill accidentally overlaps a BB capture,
+record the affected throw and use `--exclude` with its session `throw_idx`.
 
 ### Session files
 
@@ -197,10 +197,84 @@ Refill and run a fresh session instead of mixing uncertain retries into one
 ordered list. The recorder is sent SIGINT to finalize MCAP; an unfinalized or
 incomplete recording is flagged for review.
 
+## Analysis immediately after the run
+
+Install offline dependencies once in the analysis Python environment:
+
+```bash
+python -m pip install numpy mcap mcap-ros2-support
+```
+
+Then, from this directory (ROS2 is not needed for analysis):
+
+```bash
+python analyze_local_calibration.py /path/to/session/session.json
+```
+
+The default input is the sibling `bag/` directory. Use `--data /path/to/bag`
+after copying a session to another machine. Results go into `analysis/`:
+`report.md`, `report.json`, `extraction.json` (including rejection reasons),
+and `correction_candidate.json`. At least 12 usable target cells with a
+well-conditioned 2D spread are required. Partial campaigns may be analysed;
+the report retains the session/recording-review status.
+
+The extractor ignores marker IDs. It uses the recorded launch time, release
+position and velocity to seed a gravity-constrained robust fit, rather than
+choosing whichever projectile lands nearest the target. It permits 150 mm
+release-position and 30% velocity discrepancies, requires at least 30 frames,
+250 ms of flight, gaps no longer than 80 ms, RMS residual below 5 mm and
+observations reaching within 15 ms of the descending catch crossing.
+Raw source timestamps are required; frames without them are excluded.
+These conservative gates can reject difficult real tracks; a rejected throw
+is never silently assigned another ball or replaced by a prediction.
+
+The fit gives each target cell equal weight, using its mean measured landing.
+It fits commanded-to-measured response and inverts it to obtain a correction,
+in BB-local XY millimetres. Five-fold validation holds out whole target cells
+(including all repeats). The report separates two-ball-core residuals and
+within-cell throw scatter. Cross-validation measures model prediction error;
+it is not a hardware test of corrected throws.
+
+**Use this candidate only with the corrected positive hand offset.** It replaces
+the old affine; do not stack the transforms or the old feed-bias compensation.
+Production configuration is unchanged. Confirm performance with a small
+corrected hardware pilot before using the fit for juggling.
+
+## Reproduce the simulated campaign
+
+```bash
+python simulate_local_calibration.py --out /path/to/new_simulation
+python analyze_local_calibration.py /path/to/new_simulation/session.json --data /path/to/new_simulation/observations.jsonl
+python validate_simulated_calibration.py /path/to/new_simulation/session.json --out /path/to/new_simulation/validation.json
+```
+
+The seeded 200 Hz simulation uses all 331 targets/repeats, independent uniform
+noise of +/-2 mm on every coordinate, and independent uniform +/-1% errors
+on each release-velocity component per throw. Release position is unchanged.
+An injected small affine response supplies a known systematic error. Balls
+bounce slightly, roll, and disappear one second after first ground contact.
+Static markers and human refill projectile arcs are included; marker order is
+shuffled every frame. `truth.json` is separate and never read by the analysis.
+The synthetic BB pose makes all planned targets reachable and is not a
+recommendation for hardware placement. Real reachability still depends on
+your measured pose. This simulation does not cover every reflection, contact,
+occlusion or timing error that might occur on hardware.
+
+Seeded validation results are saved in `simulated_calibration_validation.json`.
+All 331 flights were recovered; estimated catches differed from hidden truth
+by 0.237 mm RMS. The recovered correction differed from the true inverse by
+1.004 mm RMS across the grid. On fresh independent throw states, core-area
+RMS error fell from 24.36 to 10.10 mm, with mean bias reduced from
+(+10.03, +19.70) to (-0.45, -0.26) mm. Across the full grid RMS fell from
+25.33 to 10.57 mm. The remaining random 1% launch variation cannot be removed
+by a deterministic affine. These are simulated results, not predicted hardware
+accuracy. The independent validator re-solves corrected commands through the
+production geometry and generates new physical trajectories.
+
 ## Offline verification
 
 ```bash
-python -m unittest discover -s . -p test_local_calibration.py -v
+python -m unittest discover -s . -p 'test*local_calibration.py' -v
 ```
 
 Tests cover 50–200 mm spacing, randomized repeat balance, log-derived core,

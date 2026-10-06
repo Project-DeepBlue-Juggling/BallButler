@@ -1,0 +1,105 @@
+{
+  "simulated": true,
+  "simulation_seed": 20261006,
+  "forward_affine_mocap_xy": [
+    [
+      1.012,
+      0.008,
+      10.0
+    ],
+    [
+      -0.006,
+      0.99,
+      20.0
+    ]
+  ],
+  "fitted_correction_bb_local_xy": [
+    [
+      0.9899133546692375,
+      -0.011538456038332116,
+      20.138247229848982
+    ],
+    [
+      -0.0010533067741261325,
+      1.008938706721085,
+      -30.831022298912306
+    ]
+  ],
+  "simulation_pose": {
+    "position_mm": [
+      -1400.0,
+      -700.0,
+      1741.18188
+    ],
+    "yaw_offset_rad": -0.3
+  },
+  "observation_noise_uniform_mm": 2.0,
+  "state_error_fraction": 0.01,
+  "calibration_throws": 331,
+  "accepted_throws": 331,
+  "rejected_throws": 0,
+  "extraction_vs_true_catch": {
+    "n": 331,
+    "mean_vector_mm": [
+      0.003562966194566196,
+      -0.007817134938343686
+    ],
+    "rms_mm": 0.23698193861440642,
+    "median_mm": 0.19100212979429895,
+    "p95_mm": 0.4209762970463407
+  },
+  "correction_command_vs_true_inverse": {
+    "n": 143,
+    "mean_vector_mm": [
+      -0.47045880492951037,
+      0.02281803482908656
+    ],
+    "rms_mm": 1.0039371342670007,
+    "median_mm": 0.6522627928237208,
+    "p95_mm": 2.076125425261783
+  },
+  "fresh_state_seed": 72104,
+  "fresh_throws_per_cell": 20,
+  "fresh_full_before": {
+    "n": 2860,
+    "mean_vector_mm": [
+      9.991628305864813,
+      20.04731064724818
+    ],
+    "rms_mm": 25.328642557491477,
+    "median_mm": 24.656810913642282,
+    "p95_mm": 35.48818951807286
+  },
+  "fresh_full_after": {
+    "n": 2860,
+    "mean_vector_mm": [
+      -0.48380277390573245,
+      0.07048595190368985
+    ],
+    "rms_mm": 10.571942962570704,
+    "median_mm": 8.322090620172489,
+    "p95_mm": 19.2091464306497
+  },
+  "fresh_core_before": {
+    "n": 300,
+    "mean_vector_mm": [
+      10.025993288160956,
+      19.703773620921126
+    ],
+    "rms_mm": 24.36321383249446,
+    "median_mm": 22.91319888866417,
+    "p95_mm": 34.52307960520064
+  },
+  "fresh_core_after": {
+    "n": 300,
+    "mean_vector_mm": [
+      -0.45005529602321986,
+      -0.2600436445328129
+    ],
+    "rms_mm": 10.104367687913975,
+    "median_mm": 8.395793650081046,
+    "p95_mm": 17.755087389151416
+  },
+  "validation_skipped_cells": [],
+  "note": "Synthetic validation only. Corrected commands re-solved with production positive-s geometry, systematic velocity distortion and fresh independent +/-1% velocity-component errors."
+}

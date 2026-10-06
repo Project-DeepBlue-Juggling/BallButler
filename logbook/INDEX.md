@@ -19,6 +19,7 @@ entries, which stay authoritative. Open the `.html` in a browser.
 
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
+| 2026-10-06 | tuned | feature | calibration, tooling | Refill-aware analysis and 331-throw synthetic validation | [local-calibration-analysis](2026-10-06-local-calibration-analysis.md) |
 | 2026-10-05 | tuned | feature | calibration, tooling | Mirrored-hand simulation and randomized local two-ball calibration capture | [mirrored-hand-local-calibration](2026-10-05-mirrored-hand-local-calibration.md) |
 | 2026-06-23 | tuned | feature | firmware, throwing, tooling | Loud command-outcome channel (CMD_RESULT) + bb/throw ROS2 action — Phase 2; generic firmware→host outcome relay (CAN1→UDP→action); hardware-validated 2026-06-24 (5/5) | [loud-command-outcome-channel-cmd-result](2026-06-23-loud-command-outcome-channel-cmd-result.md) |
 | 2026-06-21 | tuned | feature | firmware, throwing | Throw settle-gates — loud + guaranteed-on-aim throws; Phase 1 (A predictive + C fire-time confirm + serial) hardware-validated; Phase 2 (loud-to-host channel) deferred | [throw-settle-gates-loud-on-aim](2026-06-21-throw-settle-gates-loud-on-aim.md) |
