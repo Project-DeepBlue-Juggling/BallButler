@@ -160,7 +160,7 @@ def fit_forward(command, measured):
     return np.c_[matrix, offset], np.c_[inverse, -inverse@offset]
 
 
-def analyse(session_path, data_path, out, exclude=()):
+def analyse(session_path, data_path, out, exclude=(), extract_only=False):
     session_path = Path(session_path)
     session = json.loads(session_path.read_text(encoding='utf-8'))
     if session.get('affine_applied') is not False or session.get('signed_s_mm', 0) <= 0:
@@ -189,6 +189,15 @@ def analyse(session_path, data_path, out, exclude=()):
                   (number, len(rows), len(accepted), len(rejected)), flush=True)
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
     write_json(out/'extraction.json', dict(accepted=accepted, rejected=rejected))
+    if extract_only:
+        report = dict(accepted_throws=len(accepted), rejected_throws=rejected,
+                      mode='extraction_only_no_affine', session_status=session.get('status'),
+                      recording_needs_review=session.get('recording_needs_review', False))
+        if accepted:
+            report['before'] = stats(np.asarray([r['landing_global_mm'][:2] for r in accepted]) -
+                                     np.asarray([r['target_global_mm'][:2] for r in accepted]))
+        write_json(out/'extraction_report.json', report)
+        return report
     groups = sorted(set(r['cell_idx'] for r in accepted))
     if len(groups) < 12:
         raise ValueError('Fewer than 12 usable target cells; extraction.json records rejection reasons')
@@ -244,8 +253,9 @@ def main():
     parser.add_argument('--data', type=Path, help='MCAP bag directory/file, or simulated JSONL; default: session sibling bag/')
     parser.add_argument('--out', type=Path)
     parser.add_argument('--exclude', type=int, nargs='*', default=[], help='exclude known contaminated throw_idx values from session.json')
+    parser.add_argument('--extract-only', action='store_true', help='check pilot trajectories and misses without fitting an affine (no 12-cell minimum)')
     args = parser.parse_args()
-    report = analyse(args.session, args.data or args.session.parent/'bag', args.out or args.session.parent/'analysis', args.exclude)
+    report = analyse(args.session, args.data or args.session.parent/'bag', args.out or args.session.parent/'analysis', args.exclude, args.extract_only)
     print(json.dumps(report, indent=2))
 
 

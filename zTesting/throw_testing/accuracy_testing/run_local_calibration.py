@@ -132,6 +132,16 @@ def check_recorded_topics(metadata):
     return counts
 
 
+def recorder_shutdown_ok(exit_code, requested_sigint, metadata_valid, close_error=False):
+    """Foxy may return the SIGINT number (2) after orderly recorder shutdown.
+
+    Accept it only for our requested stop and with finalized, populated metadata.
+    This verifies capture bookkeeping, not the visibility of individual balls.
+    """
+    return bool(metadata_valid and not close_error and
+                (exit_code == 0 or (requested_sigint and exit_code == 2)))
+
+
 def core_from_logs(paths):
     """Use columns CATCH-AIM points only; ignore other skills and starts."""
     points = []
@@ -454,22 +464,28 @@ def run(args):
                 except KeyboardInterrupt: continue
                 except Exception: time.sleep(.1)
             if rclpy.ok(): emit('session_end',status=session['status'])
+            session['recorder_sigint_requested']=False
             if recorder.poll() is None:
+                session['recorder_sigint_requested']=True
                 recorder.send_signal(signal.SIGINT)
                 try: recorder.wait(timeout=20)
                 except subprocess.TimeoutExpired:
                     session['recorder_close_error']='Recorder did not finalize within 20 seconds; inspect process and bag.'
             session['recorder_exit_code']=recorder.poll()
-            if recorder.poll() not in (0,None) or 'recorder_close_error' in session:
-                session['recording_needs_review']=True
+            metadata_valid=False
             try:
                 import yaml
                 metadata=yaml.safe_load((out/'bag'/'metadata.yaml').read_text(encoding='utf-8'))
                 session['recorded_message_counts']=check_recorded_topics(metadata)
+                metadata_valid=True
             except Exception as error:
                 session.update(recording_needs_review=True,recording_validation_error=str(error))
+            session['recording_needs_review']=not recorder_shutdown_ok(
+                session['recorder_exit_code'],session['recorder_sigint_requested'],
+                metadata_valid,'recorder_close_error' in session)
         save()
         if record_log: record_log.close()
+        client.destroy()
         node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
     if session['status'].startswith('completed') and not session.get('recording_needs_review'):

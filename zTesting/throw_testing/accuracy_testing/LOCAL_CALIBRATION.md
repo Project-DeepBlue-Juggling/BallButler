@@ -218,6 +218,14 @@ and `correction_candidate.json`. At least 12 usable target cells with a
 well-conditioned 2D spread are required. Partial campaigns may be analysed;
 the report retains the session/recording-review status.
 
+For the ten-throw pilot, add `--extract-only`. This writes `extraction.json`
+and `extraction_report.json` with accepted/rejected flights and measured misses,
+without attempting the affine fit's 12-cell minimum. Check this pilot before
+starting the full campaign. A requested recorder SIGINT may return code 2 on
+Foxy; this is accepted only when finalized metadata has all required topics.
+Older sessions retain their original review flag; extraction can still inspect
+them without modifying that historical record.
+
 The extractor ignores marker IDs. It uses the recorded launch time, release
 position and velocity to seed a gravity-constrained robust fit, rather than
 choosing whichever projectile lands nearest the target. It permits 150 mm
