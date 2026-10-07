@@ -47,6 +47,11 @@ def finite(values):
     return all(math.isfinite(float(v)) for v in values)
 
 
+def goal_uuid_bytes(goal_id):
+    """ROS2 fixed uint8 arrays can contain NumPy scalars, not Python ints."""
+    return [int(value) for value in goal_id.uuid]
+
+
 def refill_due(next_throw_index, batch_size=DEFAULT_REFILL_EVERY):
     """Initial ready prompt, then refill before each new batch of nine throws."""
     return next_throw_index % batch_size == 0
@@ -411,7 +416,7 @@ def run(args):
             if not handle.accepted:
                 row['status']='rejected'; outstanding=False; save()
                 raise RuntimeError('Bridge rejected throw; stopped without retry')
-            row['goal_uuid']=list(handle.goal_id.uuid); row['status']='accepted'; save()
+            row['goal_uuid']=goal_uuid_bytes(handle.goal_id); row['status']='accepted'; save()
             result_future=handle.get_result_async()
             spin_until(result_future.done,args.delay+15,'firmware terminal throw outcome')
             response=result_future.result(); result=response.result
