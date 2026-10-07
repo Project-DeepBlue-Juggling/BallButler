@@ -73,3 +73,5 @@ destructor InvalidHandle traceback. Added `--extract-only` for the ten-throw
 pilot, which intentionally cannot satisfy the full affine's 12-cell minimum.
 25 tests pass, including shutdown classification; extraction-only recovers
 all ten synthetic pilot flights. Hardware bag extraction is the next check.
+Hardware bag extraction initially rejected all ten; see
+[2026-10-07-pilot-trajectory-extraction-fix](2026-10-07-pilot-trajectory-extraction-fix.md).

@@ -15,7 +15,35 @@ import numpy as np
 from run_local_calibration import analysis_throw_at, write_json
 
 
+# Extraction gates. Measured on the 2026-10-07 hardware pilot (see
+# LOCAL_CALIBRATION.md, "Trajectory extraction"): a gravity-only arc leaves
+# 30-50 mm systematic residuals over a 0.9 s flight (drag plus a ~1 deg
+# effective-gravity tilt), the ball is often occluded near the apex, and the
+# arc passes BB's predicted release point ~35 ms before nominal release.
+INLIER_MM = 8.            # final per-observation residual, free-acceleration model
+MAX_RMS_MM = 5.
+MIN_SAMPLES = 30
+MIN_SPAN_S = .25          # observed flight span, and continuous final segment span
+SEGMENT_GAP_S = .08       # max gap inside the continuous segment through the catch plane
+MAX_OCCLUSION_S = .45     # max earlier gap (apex occlusion) bridged by the arc fit
+CATCH_COVER_S = .015      # last observation at most this long before the crossing
+ACCEL_TOLERANCE = .06     # |a - g| as a fraction of g: drag + tilt, not handling
+LAUNCH_RADIUS_MM = 100.   # arc closest approach to the predicted release position
+LAUNCH_TIME_S = .10       # ...at an arc time within this of nominal release
+VELOCITY_TOLERANCE = .3   # release velocity vs predicted, fraction of |v|
+LOCAL_BEFORE_S = .15      # local crossing fit window
+LOCAL_AFTER_S = .04
+LOCAL_MIN_SAMPLES = 15
+
+
 def observations(path):
+    """Yield (source stamp, all marker positions) per frame.
+
+    QTM labels are NOT identity evidence: on the 2026-10-07 pilot the thrown
+    ball carried rigid-body labels ('Base - 1/3/4/7') for part or all of its
+    flight, so filtering on an empty label discarded it. Every marker is kept;
+    the extractor's launch association and ballistic gates do the selection.
+    """
     path = Path(path)
     if path.suffix == '.jsonl':
         with path.open(encoding='utf-8') as stream:
@@ -39,10 +67,19 @@ def observations(path):
                 if abs(t - msg.log_time * 1e-9) > 2:
                     raise ValueError('Mocap/recording clocks differ by >2 s; check clock synchronisation')
                 yield t, np.asarray([[m.position.x, m.position.y, m.position.z]
-                                     for m in ros.markers if not m.label], float).reshape(-1, 3)
+                                     for m in ros.markers], float).reshape(-1, 3)
+
+
+class Rejection(ValueError):
+    """A specific rejection reason plus per-gate diagnostics for extraction.json."""
+
+    def __init__(self, reason, diagnostics=None):
+        super().__init__(reason)
+        self.diagnostics = diagnostics or {}
 
 
 def crossing(coeff, z, gravity):
+    """Descending crossing of z for a gravity-only [r, v] arc (kept for callers)."""
     disc = coeff[1, 2]**2 + 2 * gravity * (coeff[0, 2] - z)
     if disc <= 0:
         return None
@@ -50,84 +87,209 @@ def crossing(coeff, z, gravity):
     return t if t > 0 else None
 
 
-def extract(row, frames, gravity=9806.):
-    """Gravity-constrained RANSAC, seeded near release, with no target-XY gate.
+def _quadratic_crossing(coeff, z):
+    """Descending root of r + v t + a t^2/2 = z, for coeff rows [r, v, a]."""
+    a, v, r = coeff[2, 2], coeff[1, 2], coeff[0, 2] - z
+    if a >= 0:
+        return None
+    disc = v*v - 2*a*r
+    if disc <= 0:
+        return None
+    t = (-v - math.sqrt(disc)) / a
+    return t if t > 0 else None
 
-    Labels/track IDs are deliberately ignored. Fit only the launch-connected
-    arc down through the catch plane. Reject competing plausible trajectories.
+
+def _position(coeff, t):
+    t = np.asarray(t, float)
+    return coeff[0] + t[..., None]*coeff[1] + .5*(t*t)[..., None]*coeff[2]
+
+
+def _one_per_frame(mask, residual, ids):
+    # Multiple nearby reflections in a frame must not overweight that frame.
+    ix = np.flatnonzero(mask)
+    ordered = ix[np.argsort(residual[ix])]
+    _, first = np.unique(ids[ordered], return_index=True)
+    out = np.zeros_like(mask)
+    out[ordered[first]] = True
+    return out
+
+
+def _segments(ts, gap):
+    breaks = np.flatnonzero(np.diff(ts) > gap)
+    return np.split(ts, breaks + 1)
+
+
+def extract(row, frames, gravity=9806.):
+    """Measure one BB flight's descending catch-plane crossing from raw markers.
+
+    Labels/track IDs are ignored. A candidate track must (1) extrapolate back
+    through BB's predicted release position at about the nominal release time
+    (launch association, independent of the target), (2) be a free flight:
+    constant-acceleration fit within ACCEL_TOLERANCE of gravity and tight
+    residuals, (3) be observed continuously through the catch plane. The
+    crossing XY comes from a local fit around the crossing, never a
+    prediction. Competing plausible tracks are rejected as ambiguous.
+    Raises Rejection (a ValueError) with a specific reason and diagnostics.
     """
-    origin = np.asarray(row['predicted_release_position_mm'])
-    velocity = np.asarray(row['predicted_release_velocity_mm_s'])
+    origin = np.asarray(row['predicted_release_position_mm'], float)
+    velocity = np.asarray(row['predicted_release_velocity_mm_s'], float)
     epoch = row['nominal_release_wall_s']
     z = row['target_global_mm'][2]
+    g_vec = np.array([0., 0., -gravity])
     times, points, frame_ids = [], [], []
-    for i, (stamp, pts) in enumerate(sorted(frames, key=lambda f: f[0])):
+    last = None
+    for frame, (stamp, pts) in enumerate(sorted(frames, key=lambda f: f[0])):
+        if stamp == last:
+            continue  # the 200 Hz publisher can repeat a 300 Hz QTM frame
+        last = stamp
         t = stamp - epoch
         if t < -.05:
             continue
-        for p in pts:
+        for p in np.asarray(pts, float).reshape(-1, 3):
             if np.isfinite(p).all() and p[2] > z - 120:
-                times.append(t); points.append(p); frame_ids.append(i)
-    if len(times) < 30:
-        raise ValueError('insufficient airborne observations')
+                times.append(t); points.append(p); frame_ids.append(frame)
+    diagnostics = dict(observations=len(times))
+    if len(times) < MIN_SAMPLES:
+        raise Rejection('insufficient airborne observations (%d above catch plane - 120 mm)' % len(times), diagnostics)
     t = np.asarray(times); p = np.asarray(points); ids = np.asarray(frame_ids)
-    q = p.copy(); q[:, 2] += .5 * gravity * t*t
-    design = np.c_[np.ones(len(t)), t]
-    predicted = origin + t[:, None]*velocity
-    early = np.flatnonzero((t >= 0) & (t < .35) & (np.linalg.norm(q-predicted, axis=1) < 200))
-    if len(early) < 10:
-        raise ValueError('no launch-associated observations')
-    rng = np.random.default_rng(int(row['throw_idx']) + 104)
-    candidates = []
-    def inliers(coeff):
-        end = crossing(coeff, z, gravity)
+    q = p.copy(); q[:, 2] += .5*gravity*t*t      # gravity-compensated: linear in t
+    lin = np.c_[np.ones(len(t)), t]
+    quad = np.c_[lin, .5*t*t]
+    gates = ['velocity', 'samples', 'acceleration', 'residual', 'launch',
+             'occlusion', 'catch_segment', 'catch_coverage', 'local_fit']
+    counts = dict((g, 0) for g in gates)
+    furthest = [-1, None]
+
+    def fail(gate, **info):
+        counts[gate] += 1
+        k = gates.index(gate)
+        if k > furthest[0]:
+            furthest[0], furthest[1] = k, dict(info, gate=gate)
+        elif k == furthest[0] and gate == 'launch' and info.get('closest_mm', 1e9) < furthest[1].get('closest_mm', 1e9):
+            furthest[1] = dict(info, gate=gate)
+        return None
+
+    def evaluate(coeff):
+        """Refine a gravity-constrained [r, v] seed and apply every gate."""
+        if np.linalg.norm(coeff[1]-velocity) > VELOCITY_TOLERANCE*np.linalg.norm(velocity):
+            return fail('velocity')
+        full = np.r_[coeff, g_vec[None]]
+        horizon = _quadratic_crossing(full, z)
+        if horizon is None:
+            return fail('samples')
+        mask = None
+        # Coarse association on the gravity-only arc, then the free-acceleration
+        # model at the tight final threshold.
+        for radius, model in ((60., 'lin'), (25., 'lin'), (15., 'quad'), (INLIER_MM, 'quad'), (INLIER_MM, 'quad')):
+            residual = np.linalg.norm(p - _position(full, t), axis=1)
+            mask = _one_per_frame((residual < radius) & (t <= horizon + LOCAL_AFTER_S) & (t >= -.05), residual, ids)
+            if mask.sum() < MIN_SAMPLES:
+                return fail('samples', n=int(mask.sum()))
+            if model == 'lin':
+                c = np.linalg.lstsq(lin[mask], q[mask], rcond=None)[0]
+                full = np.r_[c, g_vec[None]]
+            else:
+                full = np.linalg.lstsq(quad[mask], p[mask], rcond=None)[0]
+            horizon = _quadratic_crossing(full, z)
+            if horizon is None:
+                return fail('samples')
+        residual = np.linalg.norm(p - _position(full, t), axis=1)
+        mask = _one_per_frame((residual < INLIER_MM) & (t <= horizon + LOCAL_AFTER_S) & (t >= -.05), residual, ids)
+        n = int(mask.sum())
+        if n < MIN_SAMPLES:
+            return fail('samples', n=n)
+        full = np.linalg.lstsq(quad[mask], p[mask], rcond=None)[0]
+        end = _quadratic_crossing(full, z)
         if end is None:
-            return np.zeros(len(t), bool)
-        residual = np.linalg.norm(q-design@coeff, axis=1)
-        mask = (residual < 8) & (t <= end + .04)
-        # Multiple nearby reflections in a frame must not overweight that frame.
-        ix = np.flatnonzero(mask)
-        ordered = ix[np.argsort(residual[ix])]
-        _, first = np.unique(ids[ordered], return_index=True)
-        mask[:] = False
-        mask[ordered[first]] = True
-        return mask
-    for _ in range(180):
-        a, b = rng.choice(early, 2, replace=False)
-        if abs(t[b]-t[a]) < .08:
-            continue
-        v = (q[b]-q[a])/(t[b]-t[a]); r = q[a]-t[a]*v
-        if np.linalg.norm(r-origin) > 150 or np.linalg.norm(v-velocity) > .3*np.linalg.norm(velocity):
-            continue
-        coeff = np.array([r, v]); mask = inliers(coeff)
-        if mask.sum() < 30:
-            continue
-        for _ in range(3):
-            coeff = np.linalg.lstsq(design[mask], q[mask], rcond=None)[0]
-            mask = inliers(coeff)
-            if mask.sum() < 30:
-                break
-        if mask.sum() < 30:
-            continue
-        end = crossing(coeff, z, gravity)
+            return fail('samples')
+        accel_error = float(np.linalg.norm(full[2] - g_vec))
+        if accel_error > ACCEL_TOLERANCE*gravity:
+            return fail('acceleration', accel_error_mm_s2=round(accel_error, 1))
+        rms = float(np.sqrt(np.mean(np.sum((p[mask] - quad[mask] @ full)**2, axis=1))))
+        if rms > MAX_RMS_MM:
+            return fail('residual', rms_mm=round(rms, 2))
+        grid = np.linspace(-.2, .2, 801)
+        dist = np.linalg.norm(_position(full, grid) - origin, axis=1)
+        k = int(np.argmin(dist))
+        closest, tau = float(dist[k]), float(grid[k])
+        if closest > LAUNCH_RADIUS_MM or abs(tau) > LAUNCH_TIME_S:
+            return fail('launch', closest_mm=round(closest, 1), arc_time_offset_s=round(tau, 4))
+        if np.linalg.norm(full[1] + tau*full[2] - velocity) > VELOCITY_TOLERANCE*np.linalg.norm(velocity):
+            return fail('velocity')
         ts = np.unique(t[mask])
-        if ts[-1]-ts[0] < .25 or ts[0] > .2 or np.max(np.diff(ts)) > .08:
-            continue
-        if not (ts[0] < end and ts[-1] >= end-.015):
-            continue
-        rms = float(np.sqrt(np.mean(np.sum((q[mask]-design[mask]@coeff)**2, axis=1))))
-        if rms > 5:
-            continue
-        xy = coeff[0, :2]+end*coeff[1, :2]
-        candidates.append((int(mask.sum()), rms, xy, end, coeff))
+        if ts[-1]-ts[0] < MIN_SPAN_S:
+            return fail('samples', span_s=round(float(ts[-1]-ts[0]), 3))
+        gaps = np.diff(ts)
+        if gaps.max() > MAX_OCCLUSION_S:
+            return fail('occlusion', max_gap_s=round(float(gaps.max()), 3))
+        final = _segments(ts, SEGMENT_GAP_S)[-1]
+        if final[-1]-final[0] < MIN_SPAN_S or not final[0] < end:
+            return fail('catch_segment', final_segment_s=[round(float(final[0]), 3), round(float(final[-1]), 3)],
+                        catch_time_s=round(end, 3))
+        if final[-1] < end - CATCH_COVER_S:
+            return fail('catch_coverage', last_observation_s=round(float(final[-1]), 3), catch_time_s=round(end, 3))
+        # Local crossing: re-fit position/velocity near the crossing with the
+        # track's own acceleration held fixed. A single constant-acceleration
+        # arc is ~10 mm off near its ends; locally the model error is < 1 mm.
+        near = mask & (t >= end - LOCAL_BEFORE_S) & (t <= end + LOCAL_AFTER_S)
+        if near.sum() < LOCAL_MIN_SAMPLES:
+            return fail('local_fit', n=int(near.sum()))
+        tl = t[near]; corrected = p[near] - .5*(tl*tl)[:, None]*full[2]
+        c = np.linalg.lstsq(np.c_[np.ones(len(tl)), tl], corrected, rcond=None)[0]
+        local = np.r_[c, full[2][None]]
+        local_rms = float(np.sqrt(np.mean(np.sum((p[near] - _position(local, tl))**2, axis=1))))
+        local_end = _quadratic_crossing(local, z)
+        if local_end is None or local_rms > MAX_RMS_MM or abs(local_end - end) > .02:
+            return fail('local_fit', local_rms_mm=round(local_rms, 2))
+        xy = _position(local, local_end)[:2]
+        return dict(n=n, rms=rms, xy=xy, end=local_end, coeff=full, mask=mask, closest=closest, tau=tau,
+                    accel_error=accel_error, ts=ts, final=final, local_rms=local_rms, local_n=int(near.sum()),
+                    global_xy=_position(full, end)[:2], max_gap=float(gaps.max()))
+
+    # Seeds: BB's predicted release position as an anchor at a few plausible
+    # arc times, through each later observation. Free in velocity, hence in
+    # landing XY: no target or predicted-landing proximity is used.
+    seeds = np.flatnonzero((t >= .1))
+    if len(seeds) > 300:
+        seeds = seeds[np.linspace(0, len(seeds)-1, 300).astype(int)]
+    candidates, seen = [], set()
+    for tau0 in (-.1, -.05, 0., .05):
+        anchor = origin + np.array([0., 0., .5*gravity*tau0*tau0])
+        for i in seeds:
+            v = (q[i] - anchor)/(t[i] - tau0)
+            result = evaluate(np.array([anchor - tau0*v, v]))
+            if result is None:
+                continue
+            key = tuple(np.flatnonzero(result['mask'])[::5])
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(result)
+    diagnostics['gate_failures'] = dict((k, v) for k, v in counts.items() if v)
     if not candidates:
-        raise ValueError('no continuous launch-to-catch ballistic fit passed quality gates')
-    candidates.sort(key=lambda c: (-c[0], c[1]))
+        if furthest[1] is None:
+            raise Rejection('no launch-associated ballistic track (no seed reached the gates)', diagnostics)
+        diagnostics['best_failure'] = furthest[1]
+        detail = ', '.join('%s=%s' % (k, v) for k, v in sorted(furthest[1].items()) if k != 'gate')
+        raise Rejection('no launch-to-catch ballistic track passed quality gates; furthest gate reached: %s%s'
+                        % (furthest[1]['gate'], ' (%s)' % detail if detail else ''), diagnostics)
+    candidates.sort(key=lambda c: (-c['n'], c['rms']))
     best = candidates[0]
-    if any(c[0] >= .8*best[0] and np.linalg.norm(c[2]-best[2]) > 10 for c in candidates[1:]):
-        raise ValueError('ambiguous competing launch trajectories')
-    return dict(landing_global_mm=[*best[2].tolist(), z], samples=best[0],
-                fit_rms_mm=best[1], catch_wall_s=epoch+best[3], release_fit=best[4].tolist())
+    for other in candidates[1:]:
+        shared = (best['mask'] & other['mask']).sum() / float(min(best['n'], other['n']))
+        if other['n'] >= .8*best['n'] and shared < .5 and np.linalg.norm(other['xy']-best['xy']) > 10:
+            diagnostics['competing_landing_xy_mm'] = [best['xy'].tolist(), other['xy'].tolist()]
+            raise Rejection('ambiguous competing launch trajectories', diagnostics)
+    return dict(landing_global_mm=[*best['xy'].tolist(), z], samples=best['n'],
+                fit_rms_mm=best['rms'], local_fit_rms_mm=best['local_rms'], local_samples=best['local_n'],
+                catch_wall_s=epoch+best['end'], catch_time_s=best['end'],
+                observed_span_s=[float(best['ts'][0]), float(best['ts'][-1])],
+                final_segment_s=[float(best['final'][0]), float(best['final'][-1])],
+                max_gap_s=best['max_gap'], accel_mm_s2=best['coeff'][2].tolist(),
+                accel_error_mm_s2=best['accel_error'],
+                launch_closest_mm=best['closest'], arc_time_offset_s=best['tau'],
+                global_fit_landing_xy_mm=best['global_xy'].tolist(),
+                release_fit=best['coeff'].tolist())
 
 
 def stats(errors):
@@ -183,7 +345,8 @@ def analyse(session_path, data_path, out, exclude=(), extract_only=False):
             result = extract(row, frames[row['throw_idx']], gravity)
             accepted.append(dict(row, **result))
         except ValueError as error:
-            rejected.append(dict(throw_idx=row['throw_idx'], cell_idx=row['cell_idx'], reason=str(error)))
+            rejected.append(dict(throw_idx=row['throw_idx'], cell_idx=row['cell_idx'], reason=str(error),
+                                 diagnostics=getattr(error, 'diagnostics', {})))
         if number % 25 == 0 or number == len(rows):
             print('Analysed %d/%d throws: %d accepted, %d rejected' %
                   (number, len(rows), len(accepted), len(rejected)), flush=True)

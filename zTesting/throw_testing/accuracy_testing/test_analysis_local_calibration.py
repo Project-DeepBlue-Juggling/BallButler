@@ -4,7 +4,48 @@ import tempfile
 import unittest
 from pathlib import Path
 import numpy as np
-from analyze_local_calibration import extract, fit_forward, observations
+from analyze_local_calibration import Rejection, extract, fit_forward, observations
+
+
+def hardware_like_flight(origin, velocity, release=-.045, gravity=(80., 170., -9740.), drag=2.7e-5,
+                         occluded=(.1, .42), stop=None, seed=3):
+    """Frames reproducing the 2026-10-07 pilot, relative to nominal release t=0.
+
+    Measured there: the arc passes BB's predicted release point ~45 ms before
+    nominal release; a tilted effective gravity (+80, +170, -9740 mm/s^2) plus
+    quadratic drag (k ~ 2.7e-5 /mm) leaves 30-50 mm residuals on a gravity-only
+    arc; the ball is invisible near the apex; it rests in the hand before the
+    stroke; 300 Hz QTM frames are republished at 200 Hz, so stamps repeat.
+    Returns (frames, true descending catch-plane XY at z=830, wall epoch).
+    """
+    rng = np.random.default_rng(seed)
+    gravity = np.asarray(gravity); dt = 1e-4
+    pos, vel = np.array(origin, float), np.array(velocity, float)
+    track, truth, t = [], None, release
+    while pos[2] > 0:
+        track.append((t, pos.copy()))
+        acc = gravity - drag*np.linalg.norm(vel)*vel
+        new = pos + vel*dt + .5*acc*dt*dt
+        if truth is None and pos[2] >= 830 > new[2] and vel[2] < 0:
+            truth = pos[:2] + (new[:2]-pos[:2])*(pos[2]-830)/(pos[2]-new[2])
+        pos, vel, t = new, vel + acc*dt, t + dt
+    times = np.array([x[0] for x in track]); path = np.array([x[1] for x in track])
+    epoch = 100.
+    frames = []
+    for k in range(int(round((1.8+.25)*300))):
+        stamp = -.25 + k/300.
+        points = [[-1000, 0, 1500], [50, 60, 2], [-790, 740, 2300]]
+        if stamp < release - .07:
+            points.append(np.asarray(origin) - [0, 0, 30])       # ball resting in the hand
+        elif stamp >= release and not occluded[0] <= stamp <= occluded[1] and (stop is None or stamp < stop):
+            j = np.searchsorted(times, stamp)
+            if j < len(times):
+                points.append(path[j])
+        frame = (epoch+stamp, np.asarray(points, float) + rng.uniform(-1.5, 1.5, (len(points), 3)))
+        frames.append(frame)
+        if k % 2 == 0:
+            frames.append(frame)                                # republished frame, same stamp
+    return frames, truth, epoch
 
 
 class AnalysisTests(unittest.TestCase):
@@ -46,6 +87,41 @@ class AnalysisTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract(self.row, [(t, p) for t, p in self.frames() if t < 100.5])
 
+    def hardware_row(self):
+        return dict(self.row, predicted_release_position_mm=[-999.6, -286.8, 1879.9],
+                    predicted_release_velocity_mm_s=[864.9, 211.2, 3131.5])
+
+    def test_hardware_pilot_flight_recovered(self):
+        # Regression: every gate of the gravity-only, launch-window extractor
+        # failed on this shape (2026-10-07 pilot, throws 0-9).
+        row = self.hardware_row()
+        frames, truth, _ = hardware_like_flight(row['predicted_release_position_mm'],
+                                                row['predicted_release_velocity_mm_s'])
+        result = extract(row, frames)
+        np.testing.assert_allclose(result['landing_global_mm'][:2], truth, atol=1.5)
+        self.assertLess(result['fit_rms_mm'], 5)
+        self.assertAlmostEqual(result['arc_time_offset_s'], -.045, delta=.01)
+        self.assertLess(result['launch_closest_mm'], 10)
+        self.assertGreater(result['max_gap_s'], .3)              # bridged apex occlusion
+
+    def test_arc_not_launched_by_bb_rejected(self):
+        # A projectile inside the capture window that never passed BB's release
+        # point (e.g. a stray refill ball) must not be measured.
+        row = self.hardware_row()
+        start = np.asarray(row['predicted_release_position_mm']) + [0, 400, -150]
+        frames, _, _ = hardware_like_flight(start, row['predicted_release_velocity_mm_s'])
+        with self.assertRaises(Rejection) as caught:
+            extract(row, frames)
+        self.assertIn('launch', str(caught.exception))
+        self.assertIn('best_failure', caught.exception.diagnostics)
+
+    def test_unobserved_catch_crossing_rejected_not_extrapolated(self):
+        row = self.hardware_row()
+        frames, _, _ = hardware_like_flight(row['predicted_release_position_mm'],
+                                            row['predicted_release_velocity_mm_s'], stop=.8)
+        with self.assertRaisesRegex(Rejection, 'catch_coverage|catch_segment'):
+            extract(row, frames)
+
     def test_forward_inverse_direction_and_rank(self):
         commands = np.array([[x, y] for x in (-300, 0, 300) for y in (-300, 0, 300)])
         matrix = np.array([[1.02, .01, 10], [-.02, .99, 20]])
@@ -82,12 +158,14 @@ uint32 nanosec
                 writer = Writer(stream)
                 definition = writer.register_msgdef('jugglebot_interfaces/msg/MocapDataMulti', schema)
                 writer.write_message('/mocap_data', definition,
-                    dict(markers=[dict(label='', position=dict(x=1., y=2., z=3.))],
+                    dict(markers=[dict(label='', position=dict(x=1., y=2., z=3.)),
+                                  # QTM gave the thrown ball rigid-body labels on hardware.
+                                  dict(label='Base - 1', position=dict(x=4., y=5., z=6.))],
                          aligned=True, stamp=dict(sec=100, nanosec=0)), log_time=100_000_000_000)
                 writer.finish()
             frames = list(observations(path))
             self.assertEqual(frames[0][0], 100.)
-            np.testing.assert_equal(frames[0][1], [[1, 2, 3]])
+            np.testing.assert_equal(frames[0][1], [[1, 2, 3], [4, 5, 6]])
 
 
 if __name__ == '__main__':

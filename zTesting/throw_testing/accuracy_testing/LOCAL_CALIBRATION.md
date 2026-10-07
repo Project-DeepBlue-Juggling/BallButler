@@ -154,8 +154,9 @@ estimate, so still check that the ball has actually grounded before refilling.
 Enter while a return ball is still airborne.
 
 Raw refill markers stay in the bag for audit, excluded by the recorded windows.
-The companion analysis identifies launch-associated outbound arcs, fits gravity
-to raw observations and measures the descending catch-plane crossing. Bounces
+The companion analysis identifies launch-associated outbound arcs, fits a
+free-flight model to raw observations and measures the descending catch-plane
+crossing (see "Trajectory extraction"). Bounces
 below the catch plane cannot enter the fitted arc. Ambiguous trajectories,
 missing crossings and long gaps are rejected and reported. Collect and handle
 balls during refill pauses. If a refill accidentally overlaps a BB capture,
@@ -226,15 +227,43 @@ Foxy; this is accepted only when finalized metadata has all required topics.
 Older sessions retain their original review flag; extraction can still inspect
 them without modifying that historical record.
 
-The extractor ignores marker IDs. It uses the recorded launch time, release
-position and velocity to seed a gravity-constrained robust fit, rather than
-choosing whichever projectile lands nearest the target. It permits 150 mm
-release-position and 30% velocity discrepancies, requires at least 30 frames,
-250 ms of flight, gaps no longer than 80 ms, RMS residual below 5 mm and
-observations reaching within 15 ms of the descending catch crossing.
-Raw source timestamps are required; frames without them are excluded.
-These conservative gates can reject difficult real tracks; a rejected throw
-is never silently assigned another ball or replaced by a prediction.
+### Trajectory extraction
+
+The extractor reads **every** marker and ignores QTM labels. On the
+2026-10-07 hardware pilot QTM gave the thrown ball rigid-body labels
+(`Base - 1/3/4/7`) for part or all of its flight, so labels are not identity
+evidence. Exactly repeated frames (the 200 Hz publisher re-sending a 300 Hz
+QTM frame) are counted once.
+
+A track is accepted only if all of these hold (constants at the top of
+`analyze_local_calibration.py`):
+
+- **Launch association:** the fitted arc passes within 100 mm of BB's
+  predicted release position at an arc time within ±0.10 s of nominal release,
+  with release velocity within 30%. Seeds anchor at that release position and
+  are free in velocity, so landing XY is never pulled toward the target or a
+  predicted landing.
+- **Free flight:** one constant-acceleration fit (per-axis) with acceleration
+  within 6% of g, ≥30 frames over ≥0.25 s, 8 mm inliers and ≤5 mm RMS. A
+  gravity-only arc is the wrong model over a full flight: drag plus a ~1°
+  effective-gravity tilt leave 30–50 mm residuals at the arc ends.
+- **Occlusion:** earlier gaps up to 0.45 s are bridged (the ball is often
+  unseen near the apex), but the segment through the catch plane must be
+  continuous (gaps ≤80 ms) for ≥0.25 s and observed to within 15 ms of the
+  descending crossing. A crossing is never extrapolated further.
+- **Measurement:** catch-plane XY comes from a local fit over −150/+40 ms
+  around the crossing (≥15 frames, track acceleration held fixed). On the pilot
+  it agreed with an independent drag + tilted-gravity ODE fit within 0.9–2.1 mm.
+- **Ambiguity:** a distinct track (<50% shared frames) with ≥80% of the support
+  and a landing >10 mm away rejects the throw.
+
+Each rejection in `extraction.json` names the furthest gate reached and its
+values, with per-gate failure counts under `diagnostics`. Accepted rows report
+samples, observed span, final continuous segment, maximum gap, fit and local
+RMS, acceleration, launch closest approach and `arc_time_offset_s` (arc time,
+relative to nominal release, at which the track passes the predicted release
+point). Raw source timestamps are required; frames without them are excluded.
+A rejected throw is never assigned another ball or replaced by a prediction.
 
 The fit gives each target cell equal weight, using its mean measured landing.
 It fits commanded-to-measured response and inverts it to obtain a correction,
@@ -247,6 +276,23 @@ it is not a hardware test of corrected throws.
 the old affine; do not stack the transforms or the old feed-bias compensation.
 Production configuration is unchanged. Confirm performance with a small
 corrected hardware pilot before using the fit for juggling.
+
+## Hardware pilot, 2026-10-07
+
+Session `~/bb_calibration_sessions/20261007T043306_968166Z` (10 throws,
+`--schedule-to-mocap 0.3 -0.6`). The original extractor rejected all ten; the
+revised one accepts all ten (fit RMS 2.4–3.4 mm, local crossing RMS
+0.3–0.8 mm, launch closest approach 5–11 mm). Uncorrected misses, measured
+XY − target: 14–122 mm, mean (+53.7, +4.4) mm, growing with target X. The arc
+passes the predicted release point 40–57 ms **before** nominal release, a
+consistent offset not yet explained (see the logbook). Ten throws over ten
+cells are below the affine's 12-cell minimum by design; no correction is fitted.
+
+```bash
+python analyze_local_calibration.py \
+    ~/bb_calibration_sessions/20261007T043306_968166Z/session.json \
+    --extract-only --out ~/bb_calibration_sessions/20261007T043306_968166Z/analysis_fixed
+```
 
 ## Reproduce the simulated campaign
 
@@ -268,15 +314,18 @@ recommendation for hardware placement. Real reachability still depends on
 your measured pose. This simulation does not cover every reflection, contact,
 occlusion or timing error that might occur on hardware.
 
-Seeded validation results are saved in `simulated_calibration_validation.json`.
+Seeded validation results are saved in `simulated_calibration_validation.json`
+(regenerated 2026-10-07 with the revised extractor).
 All 331 flights were recovered; estimated catches differed from hidden truth
-by 0.237 mm RMS. The recovered correction differed from the true inverse by
-1.004 mm RMS across the grid. On fresh independent throw states, core-area
-RMS error fell from 24.36 to 10.10 mm, with mean bias reduced from
-(+10.03, +19.70) to (-0.45, -0.26) mm. Across the full grid RMS fell from
-25.33 to 10.57 mm. The remaining random 1% launch variation cannot be removed
+by 0.47 mm RMS. The recovered correction differed from the true inverse by
+0.78 mm RMS across the grid. On fresh independent throw states, core-area
+RMS error fell from 24.36 to 10.09 mm, with mean bias reduced from
+(+10.03, +19.70) to (+0.47, +0.07) mm. Across the full grid RMS fell from
+25.32 to 10.55 mm. The remaining random 1% launch variation cannot be removed
 by a deterministic affine. These are simulated results, not predicted hardware
-accuracy. The independent validator re-solves corrected commands through the
+accuracy. The simulation still assumes gravity-only flight, visible launches
+and nominal release timing; the hardware-shaped cases (labels, drag/tilt,
+apex occlusion, early arc) are covered by unit tests, not by this campaign. The independent validator re-solves corrected commands through the
 production geometry and generates new physical trajectories.
 
 ## Offline verification
@@ -288,7 +337,9 @@ python -m unittest discover -s . -p 'test*local_calibration.py' -v
 Tests cover 50–200 mm spacing, randomized repeat balance, log-derived core,
 frame translation, malformed plans, unreachable targets, stale-data gates,
 recorded-topic checks, refill-window exclusion, incomplete/ambiguous capture
-rejection, operator-pause/EOF/quit behavior, waiting through ground arrival,
+rejection, a hardware-shaped flight (rigid-body-labelled ball, drag and tilted
+gravity, early arc, apex occlusion, repeated frames), non-BB arcs and
+unobserved crossings, operator-pause/EOF/quit behavior, waiting through ground arrival,
 and actual production inverse/forward round trips with positive s.
 Live DDS/action/recorder integration still needs the Jetson pilot.
 

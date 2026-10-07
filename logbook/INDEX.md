@@ -19,6 +19,7 @@ entries, which stay authoritative. Open the `.html` in a browser.
 
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
+| 2026-10-07 | resolved | bugfix | calibration, tooling | Pilot extraction 0/10 → 10/10: ball carried rigid-body labels, gravity-only model wrong over full arc (drag + ~1° tilt), apex occlusion | [pilot-trajectory-extraction-fix](2026-10-07-pilot-trajectory-extraction-fix.md) |
 | 2026-10-06 | tuned | feature | calibration, tooling | Refill-aware analysis and 331-throw synthetic validation | [local-calibration-analysis](2026-10-06-local-calibration-analysis.md) |
 | 2026-10-05 | tuned | feature | calibration, tooling | Mirrored-hand simulation and randomized local two-ball calibration capture | [mirrored-hand-local-calibration](2026-10-05-mirrored-hand-local-calibration.md) |
 | 2026-09-30 | in-progress | investigation | firmware, throwing | Layer C yaw settle confirm gains a sample-history term (FW 5): 15 samples (100 ms) in-band + 12 deg/s rate replaces the instantaneous 3 deg/s check that a settled axis's own encoder dither could trip; 4 of 5 R5-sitting NOT_SETTLED refusals were dither, not motion; built, not yet flashed | [yaw-settle-history-term](2026-09-30-yaw-settle-history-term.md) |
