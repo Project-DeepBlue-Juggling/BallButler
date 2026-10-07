@@ -22,6 +22,21 @@ def options(**overrides):
 
 
 class PlanTests(unittest.TestCase):
+    def test_ros_uint8_goal_uuid_survives_checkpoint_and_event_json(self):
+        import numpy as np
+        goal_id = SimpleNamespace(uuid=np.arange(16, dtype=np.uint8))
+        row = dict(status='accepted', goal_uuid=calibration.goal_uuid_bytes(goal_id))
+        self.assertTrue(all(type(value) is int for value in row['goal_uuid']))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'session.json'
+            calibration.write_json(path, dict(throws=[row]))
+            self.assertEqual(json.loads(path.read_text())['throws'][0]['goal_uuid'], list(range(16)))
+            # Both the result event and failure/final checkpoints include this row.
+            self.assertEqual(json.loads(json.dumps(dict(kind='result', throw=row)))['throw'], row)
+            row['status'] = 'unknown_do_not_retry'
+            calibration.write_json(path, dict(status='failed', throws=[row]))
+            self.assertEqual(json.loads(path.read_text())['throws'][0]['status'], 'unknown_do_not_retry')
+
     def test_default_refill_pauses_only_between_nine_throw_batches(self):
         self.assertEqual([i for i in range(29) if calibration.refill_due(i)],[0,9,18,27])
         self.assertEqual([i for i in range(10) if calibration.refill_due(i,3)],[0,3,6,9])

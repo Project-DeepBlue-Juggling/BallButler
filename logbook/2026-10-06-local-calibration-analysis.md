@@ -51,3 +51,14 @@ committed. See [usage and results](../zTesting/throw_testing/accuracy_testing/LO
 No hardware was commanded. Real QTM/DDS timing, visibility and corrected-throw
 accuracy still require the hardware pilot. The fitted candidate requires the
 positive-s geometry and replaces, rather than compounds, the old affine.
+
+## First hardware pilot: UUID serialization fix (2026-10-07)
+
+The first action was dispatched and accepted, then checkpointing failed with
+`Object of type uint8 is not JSON serializable`. ROS2 exposes the goal UUID
+as a NumPy uint8 array; converting it with `list()` preserved NumPy scalars.
+The same invalid row also broke the final checkpoint. Convert each UUID byte
+explicitly to a Python int before storing it. A regression test uses an actual
+NumPy uint8 array and checks accepted/event/failure JSON persistence.
+The interrupted session must not be resumed or treated as a confirmed failed
+throw: its first command may have executed. Start a fresh pilot after updating.
