@@ -44,6 +44,37 @@ class PlanTests(unittest.TestCase):
             calibration.write_json(path, dict(status='failed', throws=[row]))
             self.assertEqual(json.loads(path.read_text())['throws'][0]['status'], 'unknown_do_not_retry')
 
+    def qtm_stamps(self, seconds=1.5, start=1791350039.):
+        # 300 Hz QTM frames, republished by a 200 Hz timer: 3.3/6.7 ms steps, some repeats.
+        return [start + int(k*1.5)/300. for k in range(int(seconds*200))]
+
+    def test_runner_stall_is_not_a_stream_gap(self):
+        # Regression, 2026-10-07: checkpoint I/O delayed the runner's callbacks
+        # by ~100 ms (it reported 0.102 s and stopped) while the bag's QTM
+        # stamps never gapped >21 ms. Queued frames keep their source stamps.
+        monitor = calibration.StreamMonitor()
+        for stamp in self.qtm_stamps():
+            monitor.update(stamp)
+        self.assertIsNone(monitor.problem())
+        self.assertLess(monitor.max_gap, .01)
+
+    def test_real_gap_and_qtm_restart_reject_capture(self):
+        stamps = self.qtm_stamps()
+        monitor = calibration.StreamMonitor()
+        for stamp in stamps[:100] + stamps[130:]:          # 150 ms outage
+            monitor.update(stamp)
+        self.assertIn('gap', monitor.problem())
+        monitor.reset()
+        for stamp in stamps[:100] + [s - 2877. for s in stamps[100:]]:  # QTM capture restart
+            monitor.update(stamp)
+        self.assertIn('stepped back', monitor.problem())
+        monitor.reset()
+        for stamp in stamps[:50] + [0.] + stamps[51:]:
+            monitor.update(stamp)
+        self.assertIn('unsynchronised', monitor.problem())
+        monitor.reset()
+        self.assertIn('no stamped', monitor.problem())
+
     def test_default_refill_pauses_only_between_nine_throw_batches(self):
         self.assertEqual([i for i in range(29) if calibration.refill_due(i)],[0,9,18,27])
         self.assertEqual([i for i in range(10) if calibration.refill_due(i,3)],[0,3,6,9])

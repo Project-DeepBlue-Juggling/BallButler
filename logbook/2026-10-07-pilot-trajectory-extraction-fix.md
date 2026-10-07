@@ -11,10 +11,13 @@ files_changed:
   - zTesting/throw_testing/accuracy_testing/test_analysis_local_calibration.py
   - zTesting/throw_testing/accuracy_testing/simulated_calibration_validation.json
   - zTesting/throw_testing/accuracy_testing/LOCAL_CALIBRATION.md
+  - zTesting/throw_testing/accuracy_testing/run_local_calibration.py
+  - zTesting/throw_testing/accuracy_testing/test_local_calibration.py
   - logbook/2026-10-07-pilot-trajectory-extraction-fix.md
   - logbook/INDEX.md
 commits:
-  - (this commit)
+  - 308497e
+  - (stream-gap follow-up)
 subsystem:
   - calibration
   - tooling
@@ -126,3 +129,24 @@ The hardware-shaped and MCAP tests fail on the previous extractor.
   cases live in unit tests. Edge cells (larger range, higher apex) are untested on hardware;
   watch the per-gate rejection diagnostics in the full campaign.
 - **Runtime.** About 1.2 s per throw for synthetic JSONL analysis; about 27 s for the ten-throw pilot, which is dominated by MCAP decoding.
+
+## Follow-up: false "mocap receive gap" stop (second pilot, QTM recording)
+
+Session `20261007T051301_800928Z`, run with a simultaneous QTM recording,
+stopped at throw 6: "Mocap receive gap exceeded 100 ms" (0.102 s). The bag shows
+no gap. Receipt gaps were ≤13 ms and QTM stamp gaps ≤21 ms on every throw, and the clean
+pilot was the same (≤17 ms). Yet the runner reported 78–99 ms on *every*
+throw of both sessions. The guard measured spacing between the runner's own
+callbacks. Each `session.json` checkpoint costs ~23 ms, growing with the session. Several in a row
+around dispatch and result, with a depth-5 subscription, stall the callbacks by
+~100 ms. The full campaign would have tripped it regardless of QTM. The QTM
+"timestamp discontinuity" warning came at 16:12:54, before the first throw, and is harmless.
+
+Fix (agreed): a deep (100) best-effort subscription, and `StreamMonitor` judges
+continuity from QTM source stamps. A >100 ms stamp gap, a backwards step or a zero
+stamp rejects **that throw's capture** (`capture_rejected`) and the session
+continues. Three consecutive rejections, or mocap stale for >1 s, still stop the session.
+The analysis lists rejected or incomplete captures. Replaying both bags' real
+stamps: max 13–21 ms, no rejections. The second session's five complete throws all
+extract (fit RMS 2.1–3.1 mm, arc offset −49 to −53 ms, repeating the pilot).
+31 tests pass (PDJ venv; system 3.8 skips the MCAP test).

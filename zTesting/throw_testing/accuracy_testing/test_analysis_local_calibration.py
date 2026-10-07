@@ -122,6 +122,20 @@ class AnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(Rejection, 'catch_coverage|catch_segment'):
             extract(row, frames)
 
+    def test_rejected_capture_reported_not_analysed(self):
+        from analyze_local_calibration import analyse
+        row = dict(self.hardware_row(), cell_idx=7, status='released', capture_complete=False,
+                   capture_rejected='mocap source-stamp gap 0.150 s exceeded 0.100 s',
+                   analysis_window_wall_s=[99.75, 101.5])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path/'session.json').write_text(json.dumps(dict(affine_applied=False, signed_s_mm=105.65,
+                                                             throws=[row], refill_intervals=[])))
+            (path/'o.jsonl').write_text(json.dumps(dict(wall_time_s=100., points_mm=[[0, 0, 900]])) + '\n')
+            report = analyse(path/'session.json', path/'o.jsonl', path/'out', extract_only=True)
+        self.assertEqual(report['accepted_throws'], 0)
+        self.assertIn('source-stamp gap', report['rejected_throws'][0]['reason'])
+
     def test_forward_inverse_direction_and_rank(self):
         commands = np.array([[x, y] for x in (-300, 0, 300) for y in (-300, 0, 300)])
         matrix = np.array([[1.02, .01, 10], [-.02, .99, 20]])

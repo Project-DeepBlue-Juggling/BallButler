@@ -183,9 +183,26 @@ BB state, fresh mocap, and IDLE orchestrator before each command. It checks
 reachability against the installed solver's normal speed/pitch/yaw/height
 limits, retains all skipped entries, and stops if BB calibration changes.
 It waits for the terminal firmware result and for the flight capture window
-before proceeding. A >100 ms observed mocap receive gap stops the session for
-review. This is a coarse stream-loss guard, not proof of ball visibility;
-offline extraction must still reject occluded, ambiguous or contacted arcs.
+before proceeding. Mocap continuity is judged from **QTM source stamps**
+(deep subscription queue), not from when the runner's callbacks happen to
+run. Its own checkpoint writes stall it by ~100 ms, which previously stopped a
+run with a false "receive gap". A >100 ms stamp gap, a stamp stepping back or
+a zero (unsynchronised) stamp during a throw marks that throw
+`capture_complete: false` with `capture_rejected` and the session **carries
+on**; the analysis lists it as rejected. Three consecutive rejected captures,
+or mocap stale for >1 s, still stop the session. This is a stream guard, not
+proof of ball visibility; extraction still rejects occluded, ambiguous or
+contacted arcs.
+
+### Recording in QTM at the same time
+
+A simultaneous QTM recording is fine as a backup. Starting a QTM capture
+restarts QTM's clock (`mocap_node` logs "QTM timestamp discontinuity" and
+re-syncs within ~0.5 s), and ending one does the same. So: set QTM's capture
+duration longer than the whole session (277 throws at ~10.5 s plus refills
+is ~55–60 min; use e.g. 90 min), start the QTM capture, wait a couple of
+seconds, then start the runner, and stop the capture only after the runner
+reports the bag closed. A restart during a throw rejects that throw only.
 Final rosbag metadata is checked for nonempty raw mocap, BB heartbeat,
 calibration and event topics before reporting recording success.
 

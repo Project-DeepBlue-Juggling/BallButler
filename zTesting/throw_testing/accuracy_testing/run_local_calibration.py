@@ -94,6 +94,60 @@ def analysis_throw_at(session, wall_time_s):
     return matches[0] if len(matches)==1 else None
 
 
+MAX_SOURCE_GAP_S = 0.1
+MAX_CONSECUTIVE_BAD_CAPTURES = 3
+
+
+class StreamMonitor:
+    """Mocap stream health from QTM source stamps, not callback spacing.
+
+    The runner's own checkpoint I/O stalls its executor for ~80-100 ms per
+    throw (growing with session.json), so subscriber callback spacing is not
+    a stream measurement: on 2026-10-07 it reported 78-102 ms "gaps" while the
+    concurrently recorded bag had <=13 ms receipt and <=21 ms stamp gaps.
+    With a deep subscription queue, queued frames keep their QTM stamps, so
+    only a real outage widens the stamp gap. A stamp stepping backwards or
+    an unsynchronised zero stamp means QTM restarted (e.g. a QTM recording
+    started/ended) and the frame timing across it is not trustworthy.
+    """
+    BACKWARD_TOLERANCE_S = 0.005  # smoothed QTM->ROS offset jitter
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.last = None
+        self.max_gap = 0.
+        self.discontinuity = None
+        self.frames = 0
+
+    def update(self, stamp_s):
+        if not stamp_s or not math.isfinite(stamp_s):
+            self.discontinuity = self.discontinuity or 'unsynchronised (zero) QTM stamp; QTM restart or clock-sync reset'
+            return
+        self.frames += 1
+        if self.last is not None:
+            dt = stamp_s - self.last
+            if dt < -self.BACKWARD_TOLERANCE_S:
+                self.discontinuity = self.discontinuity or (
+                    'QTM stamp stepped back %.3f s; QTM restart or clock-sync reset' % -dt)
+                self.last = stamp_s
+                return
+            self.max_gap = max(self.max_gap, dt)
+        if self.last is None or stamp_s > self.last:
+            self.last = stamp_s
+
+    def problem(self, max_gap_s=MAX_SOURCE_GAP_S):
+        """None if the capture's mocap stream was continuous, else a reason."""
+        if self.discontinuity:
+            return self.discontinuity
+        if not self.frames:
+            return 'no stamped mocap frames during capture'
+        if self.max_gap > max_gap_s:
+            return 'mocap source-stamp gap %.3f s exceeded %.3f s' % (self.max_gap, max_gap_s)
+        return None
+
+
 def wait_for_operator(spin_once, read_line=input):
     """Keep servicing ROS while the operator refills; no refill timeout."""
     answers=queue.Queue()
@@ -269,7 +323,7 @@ def run(args):
     # Import only here: offline plan generation never needs ROS or numpy.
     import rclpy
     from rclpy.action import ActionClient
-    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, qos_profile_sensor_data
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from jugglebot_interfaces.action import BallButlerThrowCmd
     from jugglebot_interfaces.msg import BallButlerHeartbeat, BallButlerCalibrationResult, MocapDataMulti
     from std_msgs.msg import String
@@ -291,6 +345,7 @@ def run(args):
     rclpy.init()
     node=rclpy.create_node('bb_local_calibration')
     cache={'heartbeat':None,'hb_at':0.,'calibration':None,'mocap_at':0.,'mocap_count':0,'state':None,'state_at':0.,'mocap_max_gap':0.}
+    stream=StreamMonitor()
     def heartbeat(msg): cache.update(heartbeat=msg,hb_at=time.monotonic())
     def calibration(msg): cache['calibration']=msg
     def mocap(msg):
@@ -298,18 +353,22 @@ def run(args):
         if cache['mocap_at']:
             cache['mocap_max_gap']=max(cache['mocap_max_gap'],now-cache['mocap_at'])
         cache.update(mocap_at=now,mocap_count=cache['mocap_count']+1)
+        stream.update(msg.stamp.sec+msg.stamp.nanosec*1e-9)
     def state(msg): cache.update(state=msg.data,state_at=time.monotonic())
     latched=QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE,durability=DurabilityPolicy.TRANSIENT_LOCAL)
     node.create_subscription(BallButlerHeartbeat,'/bb/heartbeat',heartbeat,20)
     node.create_subscription(BallButlerCalibrationResult,'/bb/calibration_result',calibration,latched)
-    node.create_subscription(MocapDataMulti,'/mocap_data',mocap,qos_profile_sensor_data)
+    # Deep queue: frames arriving while the runner writes checkpoints are kept
+    # (0.5 s at 200 Hz), so StreamMonitor sees their real QTM stamps.
+    mocap_qos=QoSProfile(depth=100,reliability=ReliabilityPolicy.BEST_EFFORT,durability=DurabilityPolicy.VOLATILE)
+    node.create_subscription(MocapDataMulti,'/mocap_data',mocap,mocap_qos)
     node.create_subscription(String,'/orchestrator_state',state,10)
     events=node.create_publisher(String,'/bb/local_calibration/event',20)
     client=ActionClient(node,BallButlerThrowCmd,'/bb/throw')
-    recorder=None; record_log=None; outstanding=False; last_flight_end=0.
+    recorder=None; record_log=None; outstanding=False; last_flight_end=0.; bad_captures=0
     session=dict(schema=SCHEMA,created_utc=stamp,plan=plan,plan_sha256=hashlib.sha256(args.plan.read_bytes()).hexdigest(),
                  schedule_to_mocap_mm=args.schedule_to_mocap,signed_s_mm=args.s,affine_applied=False,
-                 columns_feed_bias_applied=False,throws=[],refill_intervals=[],
+                 columns_feed_bias_applied=False,throws=[],refill_intervals=[],incomplete_capture_throw_indices=[],
                  refill_every=args.refill_every,ground_z_mm=args.ground_z,
                  status='preflight',bag=str(out/'bag'))
     def save(): write_json(out/'session.json',session)
@@ -396,7 +455,7 @@ def run(args):
             if refill_due(selected_idx,args.refill_every):
                 operator_pause()
             spin_until(ready,args.timeout,'BB ready after reload, fresh mocap, and idle orchestrator')
-            cache['mocap_max_gap']=0.
+            cache['mocap_max_gap']=0.; stream.reset()
             latest=cache['calibration']
             if latest is None or not latest.success or [latest.position_mm.x,latest.position_mm.y,latest.position_mm.z]!=position or latest.yaw_offset_rad!=cal.yaw_offset_rad:
                 raise RuntimeError('BB calibration changed during session; start a new session')
@@ -439,9 +498,24 @@ def run(args):
             spin_until(lambda: time.monotonic()>=last_flight_end,args.delay+entry['capture_duration_s']+args.pause+2,'flight observation window')
             if not live(): raise RuntimeError('Lost fresh heartbeat/mocap or orchestrator left IDLE; stopped')
             row['mocap_count_after']=cache['mocap_count']
-            row['mocap_max_receive_gap_s']=cache['mocap_max_gap']; save()
-            if cache['mocap_max_gap']>0.1:
-                raise RuntimeError('Mocap receive gap exceeded 100 ms during throw; capture needs review')
+            # Callback spacing is diagnostic only (runner I/O inflates it).
+            row['mocap_max_receive_gap_s']=cache['mocap_max_gap']
+            row['mocap_max_source_gap_s']=stream.max_gap
+            problem=stream.problem()
+            if problem:
+                # This throw's flight is unusable, the session is not: record it,
+                # skip it in analysis and carry on. Stale mocap (>1 s) still stops
+                # via live(); repeated failures stop as systemic.
+                row.update(capture_complete=False,capture_rejected=problem)
+                session['incomplete_capture_throw_indices'].append(row['throw_idx'])
+                bad_captures+=1
+                save(); emit('capture_rejected',throw=row)
+                print('Throw %d / %d: cell %d, firmware OK but CAPTURE REJECTED (%s); continuing'
+                      %(len(session['throws']),len(selected),entry['cell_idx'],problem),flush=True)
+                if bad_captures>=MAX_CONSECUTIVE_BAD_CAPTURES:
+                    raise RuntimeError('%d consecutive rejected captures; check QTM streaming'%bad_captures)
+                continue
+            bad_captures=0
             row['capture_complete']=True
             save(); emit('capture_complete',throw=row)
             print('Throw %d / %d: cell %d, firmware OK'%(len(session['throws']),len(selected),entry['cell_idx']),flush=True)

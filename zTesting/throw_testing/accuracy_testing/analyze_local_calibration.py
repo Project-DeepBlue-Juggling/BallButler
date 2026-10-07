@@ -329,6 +329,13 @@ def analyse(session_path, data_path, out, exclude=(), extract_only=False):
         raise ValueError('Expected positive-s calibration with affine disabled')
     rows = [r for r in session['throws'] if r.get('capture_complete') and r.get('status') == 'released'
             and r['throw_idx'] not in exclude]
+    # Released but not cleanly captured (stream gap, QTM restart, stopped
+    # session): listed so the report accounts for every BB release.
+    rejected = [dict(throw_idx=r['throw_idx'], cell_idx=r['cell_idx'],
+                     reason='capture incomplete: ' + r.get('capture_rejected',
+                            'session ended before capture completed (%s)' % session.get('error', session.get('status'))))
+                for r in session['throws'] if r.get('status') == 'released' and not r.get('capture_complete')
+                and r['throw_idx'] not in exclude]
     rows.sort(key=lambda r: r['analysis_window_wall_s'][0])
     starts = [r['analysis_window_wall_s'][0] for r in rows]
     frames = {r['throw_idx']: [] for r in rows}
@@ -338,7 +345,7 @@ def analyse(session_path, data_path, out, exclude=(), extract_only=False):
             idx = analysis_throw_at(session, t)
             if idx is not None:
                 frames[idx].append((t, pts))
-    accepted, rejected = [], []
+    accepted = []
     gravity = session.get('hardware_constants', {}).get('GRAVITY_MPS2', 9.806)*1000
     for number, row in enumerate(rows, 1):
         try:
