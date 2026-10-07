@@ -22,6 +22,13 @@ def options(**overrides):
 
 
 class PlanTests(unittest.TestCase):
+    def test_recorder_sigint_exit_requires_requested_stop_and_valid_metadata(self):
+        self.assertTrue(calibration.recorder_shutdown_ok(0, False, True))
+        self.assertTrue(calibration.recorder_shutdown_ok(2, True, True))
+        for args in [(2, False, True), (2, True, False), (0, True, False),
+                     (1, True, True), (None, True, True), (2, True, True, True)]:
+            self.assertFalse(calibration.recorder_shutdown_ok(*args))
+
     def test_ros_uint8_goal_uuid_survives_checkpoint_and_event_json(self):
         import numpy as np
         goal_id = SimpleNamespace(uuid=np.arange(16, dtype=np.uint8))

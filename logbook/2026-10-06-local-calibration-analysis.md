@@ -62,3 +62,14 @@ explicitly to a Python int before storing it. A regression test uses an actual
 NumPy uint8 array and checks accepted/event/failure JSON persistence.
 The interrupted session must not be resumed or treated as a confirmed failed
 throw: its first command may have executed. Start a fresh pilot after updating.
+
+The next ten-throw pilot completed all captures. Finalized metadata contained
+27,234 mocap messages, 35 events and the calibration record; no validation or
+close error was present. Recorder exit code 2 after requested SIGINT alone
+caused the review flag. Accept this Foxy shutdown case only when we requested
+SIGINT, metadata validates and no close timeout occurred. Other nonzero exits
+remain flagged. Destroy the action client before its node to avoid the Foxy
+destructor InvalidHandle traceback. Added `--extract-only` for the ten-throw
+pilot, which intentionally cannot satisfy the full affine's 12-cell minimum.
+25 tests pass, including shutdown classification; extraction-only recovers
+all ten synthetic pilot flights. Hardware bag extraction is the next check.
