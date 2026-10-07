@@ -1,5 +1,14 @@
 # Accuracy calibration
 
+## Local two-ball campaign (2026-10)
+
+Use [LOCAL_CALIBRATION.md](LOCAL_CALIBRATION.md) and
+`run_local_calibration.py` for the randomized 50–200 mm nonuniform grid,
+corrected hand geometry, and automatic raw ROS2/MCAP capture. This is the
+current diagnostic routine for the mirrored-hand investigation. It does not
+change or reuse the old affine. The legacy flow below remains for historical
+sessions and QTM-export fitting.
+
 ## Current flow (2026-05 onward)
 
 The host-side aiming code lives in Jugglebot's `ball_butler_node.py`, which
