@@ -136,6 +136,35 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(report['accepted_throws'], 0)
         self.assertIn('source-stamp gap', report['rejected_throws'][0]['reason'])
 
+    def test_resumed_sessions_pool_with_own_rows_and_exclusions(self):
+        from analyze_local_calibration import analyse
+        row = self.hardware_row()
+        frames, truth, _ = hardware_like_flight(row['predicted_release_position_mm'],
+                                                row['predicted_release_velocity_mm_s'])
+        base = dict(affine_applied=False, signed_s_mm=105.65, plan_sha256='p', solver_sha256='s',
+                    schedule_to_mocap_mm=[.3, -.6], refill_intervals=[])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory); sessions, data = [], []
+            for k, shift in enumerate((0., 50.)):              # second part ran later
+                throw = dict(row, throw_idx=0, cell_idx=3+k, status='released', capture_complete=True,
+                             nominal_release_wall_s=100.+shift, analysis_window_wall_s=[99.75+shift, 101.6+shift])
+                (path/('s%d.json' % k)).write_text(json.dumps(dict(base, throws=[throw])))
+                with (path/('o%d.jsonl' % k)).open('w') as stream:
+                    for t, pts in frames:
+                        stream.write(json.dumps(dict(wall_time_s=t+shift, points_mm=pts.tolist()))+'\n')
+                sessions.append(path/('s%d.json' % k)); data.append(path/('o%d.jsonl' % k))
+            report = analyse(sessions, data, path/'out', extract_only=True)
+            self.assertEqual(report['accepted_throws'], 2)
+            accepted = json.loads((path/'out'/'extraction.json').read_text())['accepted']
+            self.assertEqual(sorted((r['session_index'], r['cell_idx']) for r in accepted), [(0, 3), (1, 4)])
+            for r in accepted:
+                np.testing.assert_allclose(r['landing_global_mm'][:2], truth, atol=1.5)
+            report = analyse(sessions, data, path/'out2', exclude=['1:0'], extract_only=True)
+            self.assertEqual(report['accepted_throws'], 1)
+            (path/'s1.json').write_text(json.dumps(dict(base, solver_sha256='other', throws=[])))
+            with self.assertRaisesRegex(ValueError, 'solver_sha256'):
+                analyse(sessions, data, path/'out3', extract_only=True)
+
     def test_forward_inverse_direction_and_rank(self):
         commands = np.array([[x, y] for x in (-300, 0, 300) for y in (-300, 0, 300)])
         matrix = np.array([[1.02, .01, 10], [-.02, .99, 20]])
@@ -176,8 +205,14 @@ uint32 nanosec
                                   # QTM gave the thrown ball rigid-body labels on hardware.
                                   dict(label='Base - 1', position=dict(x=4., y=5., z=6.))],
                          aligned=True, stamp=dict(sec=100, nanosec=0)), log_time=100_000_000_000)
+                for stamp in (dict(sec=0, nanosec=0), dict(sec=110, nanosec=0)):
+                    writer.write_message('/mocap_data', definition,
+                        dict(markers=[], aligned=True, stamp=stamp), log_time=101_000_000_000)
                 writer.finish()
-            frames = list(observations(path))
+            skipped = {}
+            frames = list(observations(path, skipped))
+            self.assertEqual(len(frames), 1)                    # bad-clock frames skipped, not fatal
+            self.assertEqual(skipped, dict(unstamped=1, stamp_vs_record_clock_over_2s=1))
             self.assertEqual(frames[0][0], 100.)
             np.testing.assert_equal(frames[0][1], [[1, 2, 3], [4, 5, 6]])
 

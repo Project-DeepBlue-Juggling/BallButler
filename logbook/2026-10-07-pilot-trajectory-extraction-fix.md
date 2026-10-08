@@ -17,7 +17,8 @@ files_changed:
   - logbook/INDEX.md
 commits:
   - 308497e
-  - (stream-gap follow-up)
+  - a24ecda
+  - (pre-flight follow-up)
 subsystem:
   - calibration
   - tooling
@@ -150,3 +151,28 @@ The analysis lists rejected or incomplete captures. Replaying both bags' real
 stamps: max 13–21 ms, no rejections. The second session's five complete throws all
 extract (fit RMS 2.1–3.1 mm, arc offset −49 to −53 ms, repeating the pilot).
 31 tests pass (PDJ venv; system 3.8 skips the MCAP test).
+
+## Follow-up: pre-flight review for the full campaign (2026-10-09)
+
+A fresh agent walked the pipeline offline and read-only. It found no definite blocker; the
+high-risk items were all fixed here. Agreed with the owner.
+
+- **Wrong solver risk (verified).** `~/.zshrc` sources `~/Desktop/Jugglebot/ros_ws/install`. Both pilots
+  imported `Jugglebot-skills`'s `throw_ballistics.py`. The two differ (sha256 3b4695b4… vs
+  bbb80fa5…, 279 vs 277 feasible, up to 0.5° pitch, 84 mm/s speed) and would fail
+  silently. The runner now prints the solver path and sha. The new `--expect-solver-sha` aborts on a mismatch,
+  and `--resume-from` requires the same sha.
+- **No resume.** `--resume-from SESSION_JSON` (repeatable) skips entries already
+  released and cleanly captured, and re-throws the rest. Plan, s, frame translation and solver must
+  match. The analyser pools several sessions, using per-session BB pose and `K:IDX` exclusions.
+- **Stray keystrokes.** The refill prompt flushes earlier keystrokes and re-prompts on junk instead of stopping.
+- **Duration.** About 10.4 s per throw cycle and a 35 s refill give ~66 min for 277 throws.
+  QTM runs as a continuous capture, ended after the runner closes its bag.
+- **Lower risk.** The carry-on decision is now a tested `capture_decision()`. The redundant post-dispatch
+  checkpoint was removed (each save costs ~55 ms at 277 rows). The analyser skips and counts
+  bad-clock frames instead of aborting.
+
+Real pilots pooled through the new CLI: 15 accepted. The stopped throw is listed as
+"capture incomplete". Originals are unchanged (md5). 35 tests pass (system 3.8 skips the MCAP test).
+Still untested on hardware: the carry-on path and resume. The simulator still uses
+gravity-only flights.

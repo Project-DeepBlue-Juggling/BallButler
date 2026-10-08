@@ -41,8 +41,10 @@ Defaults: **143 distinct targets, 331 throws before reachability filtering**.
 The central 5x3 points get five repeats; other points get two. Repeats run
 in randomized blocks, with each eligible target appearing once per block.
 Seed 42 reproduces the exact order; use a different seed for independent
-validation. At several seconds per throw plus reloading, allow tens of
-minutes, or reduce padding/repeats and use a pilot batch first.
+validation. Measured on the pilots, a throw cycle (reload, 3 s lead, flight,
+pause) takes ~10.4 s and a full refill ~35 s: the 277 reachable throws of the
+2026-10-07 pose take **~66 min** (48 min of throws plus 31 refill pauses).
+Reduce padding/repeats or use `--limit` batches if that is too long.
 
 XY is in the **schedule frame** used by the columns logs. Z is already global.
 At execution, `--schedule-to-mocap DX DY` adds the measured XY frame offset,
@@ -69,8 +71,15 @@ the calibration script starts its own MCAP recorder. Do not start a juggling
 pattern alongside it. No separate QTM recording is required for the normal
 path.
 
-Activate the project virtualenv and source the built Jugglebot ROS workspace,
-then work in `BallButler/zTesting/throw_testing/accuracy_testing`.
+Activate the project virtualenv and source **the same built ROS workspace the
+live stack runs**, then work in `BallButler/zTesting/throw_testing/accuracy_testing`.
+On 2026-10-07 that was `~/Desktop/Jugglebot-skills/ros_ws/install/setup.zsh`,
+while `~/.zshrc` sources `~/Desktop/Jugglebot/ros_ws/install`. The two install
+different `throw_ballistics.py` files (sha256 `bbb80fa5…` vs `3b4695b4…`):
+same interface, different commands (279 vs 277 feasible, up to 0.5° pitch).
+The wrong one fails silently and the fitted correction then belongs to the
+wrong solver. The runner prints `Solver: <path> (sha256 …)`; check it in
+`--check-only` and pass its prefix as `--expect-solver-sha` on real runs.
 Start the normal stack, calibrate BB's pose, and load the hopper. This runner
 starts its own focused recorder; normal launch recording may stay on, but
 `record:=false` avoids duplicate bag I/O. Whether the normal launch enables
@@ -98,13 +107,14 @@ the old affine does not affect this script's direct corrected-geometry path.
 
    This saves the current BB pose, reachable schedule, skipped targets/reasons,
    installed solver hash, and hardware constants under a timestamped folder
-   in `~/bb_calibration_sessions`. Check the reachable region before proceeding.
+   in `~/bb_calibration_sessions`. Check the reachable region and the printed
+   `Solver:` path before proceeding.
 
 3. Run a small pilot:
 
    ```bash
    python run_local_calibration.py run local_calibration_plan.json \
-       --schedule-to-mocap DX DY --limit 10
+       --schedule-to-mocap DX DY --expect-solver-sha bbb80fa5 --limit 10
    ```
 
    This selects the first ten **reachable entries in the randomized schedule**,
@@ -112,6 +122,19 @@ the old affine does not affect this script's direct corrected-geometry path.
    generate a separate plan with `--padding 0` first. After inspecting that
    batch, run the full plan by omitting `--limit`. Each invocation writes a new
    session; it never overwrites or silently resumes a previous session.
+
+   **Resuming after a stop.** Pass each earlier part with `--resume-from`
+   (repeatable). Entries those sessions released *and* captured cleanly are
+   skipped; everything else (never reached, failed, uncertain, rejected
+   capture) is thrown again as a fresh sample. Plan, signed s, frame
+   translation and solver sha must match, or the runner refuses. BB pose may
+   differ (e.g. recalibrated after a restart); analysis uses each session's own.
+
+   ```bash
+   python run_local_calibration.py run local_calibration_plan.json \
+       --schedule-to-mocap DX DY --expect-solver-sha bbb80fa5 \
+       --resume-from ~/bb_calibration_sessions/<part1>/session.json
+   ```
 
 4. For validation, generate a new plan with a different seed (e.g. 1042).
    The present runner always tests corrected geometry **without an affine**;
@@ -128,6 +151,8 @@ balls have landed and the flight area is clear, press Enter. The script keeps
 ROS and recording alive during the pause, waits one further settling second,
 checks BB readiness, and only then sends the next throw. There is no timeout
 on the refill pause. `q` + Enter stops the run with partial data retained.
+Keystrokes typed before the prompt are discarded, so a stray earlier Enter
+cannot skip a refill; anything other than Enter or `q` re-prompts.
 
 By default this prompt appears before the first throw and **after every nine
 throws**, before the next batch (`--refill-every 9`). It waits indefinitely
@@ -160,7 +185,8 @@ crossing (see "Trajectory extraction"). Bounces
 below the catch plane cannot enter the fitted arc. Ambiguous trajectories,
 missing crossings and long gaps are rejected and reported. Collect and handle
 balls during refill pauses. If a refill accidentally overlaps a BB capture,
-record the affected throw and use `--exclude` with its session `throw_idx`.
+record the affected throw and use `--exclude` with its session `throw_idx`
+(`K:IDX` for session K when pooling resumed parts).
 
 ### Session files
 
@@ -198,11 +224,11 @@ contacted arcs.
 
 A simultaneous QTM recording is fine as a backup. Starting a QTM capture
 restarts QTM's clock (`mocap_node` logs "QTM timestamp discontinuity" and
-re-syncs within ~0.5 s), and ending one does the same. So: set QTM's capture
-duration longer than the whole session (277 throws at ~10.5 s plus refills
-is ~55–60 min; use e.g. 90 min), start the QTM capture, wait a couple of
-seconds, then start the runner, and stop the capture only after the runner
-reports the bag closed. A restart during a throw rejects that throw only.
+re-syncs within ~0.5 s), and ending one does the same. So use a
+**continuous** QTM capture (no fixed duration; the full session is ~66 min):
+start it, wait a couple of seconds, start the runner, and end the capture only
+after the runner reports the bag closed. A restart during a throw rejects that
+throw only.
 Final rosbag metadata is checked for nonempty raw mocap, BB heartbeat,
 calibration and event topics before reporting recording success.
 
@@ -211,8 +237,8 @@ by the bridge**; the recorder stays up through its predicted flight window
 before closing. Ambiguous goal/result timeouts are marked `unknown_do_not_retry`;
 the script never repeats an uncertain throw. On hopper/reload timeout, failure,
 or interruption, partial data remains usable and the process returns failure.
-Refill and run a fresh session instead of mixing uncertain retries into one
-ordered list. The recorder is sent SIGINT to finalize MCAP; an unfinalized or
+Refill and continue with a fresh session using `--resume-from` (above); an
+uncertain throw is never retried within its own session. The recorder is sent SIGINT to finalize MCAP; an unfinalized or
 incomplete recording is flagged for review.
 
 ## Analysis immediately after the run
@@ -227,10 +253,17 @@ Then, from this directory (ROS2 is not needed for analysis):
 
 ```bash
 python analyze_local_calibration.py /path/to/session/session.json
+# a stopped session and its --resume-from continuation(s), pooled:
+python analyze_local_calibration.py part1/session.json part2/session.json --out pooled_analysis
 ```
 
-The default input is the sibling `bag/` directory. Use `--data /path/to/bag`
-after copying a session to another machine. Results go into `analysis/`:
+The default input is each session's sibling `bag/` directory. Use `--data`
+(one path per session) after copying sessions to another machine. Pooled
+sessions must share plan, solver sha, signed s and frame translation; each
+throw is mapped to BB-local XY with its own session's BB pose. Frames with no
+QTM stamp or a stamp >2 s from the recording clock are skipped and counted
+(`sessions[].frames_skipped`), never re-timed. Expect a full-session bag to take
+~15 min to analyse, mostly MCAP decoding. Results go into `analysis/`:
 `report.md`, `report.json`, `extraction.json` (including rejection reasons),
 and `correction_candidate.json`. At least 12 usable target cells with a
 well-conditioned 2D spread are required. Partial campaigns may be analysed;

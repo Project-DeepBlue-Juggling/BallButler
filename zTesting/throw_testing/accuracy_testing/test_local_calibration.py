@@ -125,6 +125,40 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'input closed'):
             calibration.wait_for_operator(lambda:time.sleep(.001),eof)
 
+    def test_refill_flushes_stray_keys_and_reprompts_on_junk(self):
+        # A stray Enter typed earlier must not skip a refill, and junk input
+        # must not end a long session: flush first, re-prompt on junk.
+        events=[]; answers=iter(['oops',''])
+        def read(): events.append('read'); return next(answers)
+        calibration.wait_for_operator(lambda:time.sleep(.001),read,
+            flush=lambda:events.append('flush'),say=lambda text:events.append('say'))
+        self.assertEqual(events,['flush','read','say','flush','read'])
+
+    def test_bad_capture_rejects_throw_and_stops_only_when_consecutive(self):
+        state=0; outcomes=[]
+        for problem in [None,'gap',None,'gap','gap','gap']:
+            fields,state,stop=calibration.capture_decision(problem,state)
+            outcomes.append((fields['capture_complete'],state,bool(stop)))
+            if not fields['capture_complete']: self.assertEqual(fields['capture_rejected'],'gap')
+        self.assertEqual(outcomes,[(True,0,False),(False,1,False),(True,0,False),
+                                   (False,1,False),(False,2,False),(False,3,True)])
+
+    def test_resume_skips_only_cleanly_captured_releases(self):
+        base=dict(plan_sha256='p',signed_s_mm=105.65,schedule_to_mocap_mm=[.3,-.6],
+                  solver_sha256='bbb',affine_applied=False)
+        rows=[dict(throw_idx=0,status='released',capture_complete=True),
+              dict(throw_idx=1,status='released',capture_complete=False,capture_rejected='gap'),
+              dict(throw_idx=2,status='unknown_do_not_retry'),
+              dict(throw_idx=3,status='failed'),
+              dict(throw_idx=4,status='released')]               # session stopped mid-capture
+        later=dict(base,throws=[dict(throw_idx=5,status='released',capture_complete=True)])
+        done=calibration.completed_throws([dict(base,throws=rows),later],'p',105.65,(.3,-.6),'bbb')
+        self.assertEqual(done,{0,5})
+        for key,value in (('plan_sha256','other'),('signed_s_mm',-105.65),
+                          ('schedule_to_mocap_mm',[0.,0.]),('solver_sha256','3b4'),('affine_applied',True)):
+            with self.assertRaisesRegex(ValueError,'Cannot resume'):
+                calibration.completed_throws([dict(base,throws=rows,**{key:value})],'p',105.65,(.3,-.6),'bbb')
+
     def test_spacing_grows_and_is_bounded(self):
         plan=calibration.make_plan(options())
         for name in ('xs_mm','ys_mm'):

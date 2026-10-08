@@ -148,12 +148,65 @@ class StreamMonitor:
         return None
 
 
-def wait_for_operator(spin_once, read_line=input):
-    """Keep servicing ROS while the operator refills; no refill timeout."""
+def capture_decision(problem, bad_captures, limit=MAX_CONSECUTIVE_BAD_CAPTURES):
+    """Per-throw capture outcome: (row fields, new consecutive-bad count, stop reason).
+
+    A bad capture rejects only that throw and the session carries on; `limit`
+    consecutive bad captures are systemic and stop it.
+    """
+    if not problem:
+        return dict(capture_complete=True), 0, None
+    bad = bad_captures + 1
+    stop = ('%d consecutive rejected captures; check QTM streaming' % bad) if bad >= limit else None
+    return dict(capture_complete=False, capture_rejected=problem), bad, stop
+
+
+def completed_throws(previous, plan_sha256, signed_s, schedule_to_mocap, solver_sha256=None):
+    """throw_idx values already released AND cleanly captured in earlier sessions.
+
+    For --resume-from: those schedule entries are skipped, everything else
+    (never reached, failed, uncertain, rejected capture) is thrown again as a
+    fresh, independent sample. Sessions must share the plan, signed s, frame
+    translation and installed solver, or their throws are not comparable.
+    """
+    done = set()
+    for session in previous:
+        checks = (('plan_sha256', plan_sha256), ('signed_s_mm', signed_s),
+                  ('schedule_to_mocap_mm', list(schedule_to_mocap)))
+        if solver_sha256 is not None:
+            checks += (('solver_sha256', solver_sha256),)
+        for key, value in checks:
+            if session.get(key) != value:
+                raise ValueError('Cannot resume: earlier session has %s=%r, this run %r' % (key, session.get(key), value))
+        if session.get('affine_applied') is not False:
+            raise ValueError('Cannot resume: earlier session did not bypass the affine')
+        done.update(row['throw_idx'] for row in session.get('throws', [])
+                    if row.get('status') == 'released' and row.get('capture_complete'))
+    return done
+
+
+def flush_terminal_input(stream=None):
+    """Discard keystrokes typed before a prompt: a stray Enter must not skip a refill."""
+    stream = stream or sys.stdin
+    try:
+        import termios
+        if stream.isatty():
+            termios.tcflush(stream, termios.TCIFLUSH)
+    except (ImportError, OSError, ValueError, AttributeError):
+        pass
+
+
+def wait_for_operator(spin_once, read_line=input, flush=flush_terminal_input, say=print):
+    """Keep servicing ROS while the operator refills; no refill timeout.
+
+    Earlier keystrokes are flushed first; unrecognised input re-prompts
+    rather than ending a long session.
+    """
     answers=queue.Queue()
     def read():
         try: answers.put(read_line())
         except Exception as error: answers.put(error)
+    flush()
     threading.Thread(target=read,daemon=True).start()
     while True:
         spin_once()
@@ -164,7 +217,10 @@ def wait_for_operator(spin_once, read_line=input):
         if answer.strip().lower() in ('q','quit','stop'):
             raise KeyboardInterrupt('Operator stopped at refill pause')
         if answer.strip():
-            raise RuntimeError('Expected Enter to continue or q to stop; nothing dispatched')
+            say('Unrecognised input %r: press Enter to continue, or q + Enter to stop.' % answer.strip())
+            flush()
+            threading.Thread(target=read,daemon=True).start()
+            continue
         return
 
 
@@ -338,6 +394,12 @@ def run(args):
         raise ValueError('--limit must be positive.')
     if args.refill_every<1:
         raise ValueError('--refill-every must be at least 1.')
+    if args.expect_solver_sha is not None and not re.fullmatch(r'[0-9a-f]{8,64}',args.expect_solver_sha):
+        raise ValueError('--expect-solver-sha must be 8-64 lowercase hex characters (from --check-only).')
+    try:
+        previous=[json.loads(Path(path).read_text(encoding='utf-8')) for path in args.resume_from]
+    except (OSError,ValueError) as error:
+        raise ValueError('Cannot read --resume-from session: %s'%error)
     if not args.check_only and not sys.stdin.isatty():
         raise ValueError('Run in an interactive terminal: refill pauses require Enter (not redirected stdin).')
     stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ')
@@ -370,6 +432,7 @@ def run(args):
                  schedule_to_mocap_mm=args.schedule_to_mocap,signed_s_mm=args.s,affine_applied=False,
                  columns_feed_bias_applied=False,throws=[],refill_intervals=[],incomplete_capture_throw_indices=[],
                  refill_every=args.refill_every,ground_z_mm=args.ground_z,
+                 resumed_from=[str(Path(path).resolve()) for path in args.resume_from],
                  status='preflight',bag=str(out/'bag'))
     def save(): write_json(out/'session.json',session)
     def emit(kind, **fields):
@@ -419,14 +482,25 @@ def run(args):
                                 yaw_offset_std_deg=cal.yaw_offset_std_deg,axis_tilt_deg=cal.axis_tilt_deg)
         session['solver_source']=sys.modules[solve_throw_local.__module__].__file__
         session['solver_sha256']=hashlib.sha256(Path(session['solver_source']).read_bytes()).hexdigest()
+        print('Solver: %s (sha256 %s)'%(session['solver_source'],session['solver_sha256']),flush=True)
+        if args.expect_solver_sha and not session['solver_sha256'].startswith(args.expect_solver_sha):
+            raise RuntimeError('Installed solver sha256 %s does not match --expect-solver-sha %s; '
+                               'source the workspace the live stack runs'%(session['solver_sha256'][:16],args.expect_solver_sha))
         session['hardware_constants']={k:v for k,v in vars(hw).items() if k.startswith('BB_') and isinstance(v,(str,int,float,bool))}
         feasible,skipped=prepare_schedule(plan,position,cal.yaw_offset_rad,args.schedule_to_mocap,
                                            solve_throw_local,global_to_bb_local,args.s)
         session.update(feasible_schedule=feasible,skipped_unreachable=skipped)
         print('%d feasible throws; %d skipped as unreachable. Output: %s'%(len(feasible),len(skipped),out),flush=True)
         if not feasible: raise RuntimeError('No reachable targets')
-        # No resume of uncertain throws: pick a fresh session / independent block.
-        selected=feasible[:args.limit] if args.limit else feasible
+        # Resuming skips only cleanly captured releases; uncertain, failed or
+        # rejected-capture entries are thrown again as fresh samples.
+        done=completed_throws(previous,session['plan_sha256'],args.s,args.schedule_to_mocap,session['solver_sha256'])
+        remaining=[e for e in feasible if e['throw_idx'] not in done]
+        session['resume_skipped_throw_indices']=sorted(done)
+        if previous:
+            print('Resuming: %d already captured, %d remaining.'%(len(feasible)-len(remaining),len(remaining)),flush=True)
+        if not remaining: raise RuntimeError('Nothing left to throw: every feasible entry is already captured')
+        selected=remaining[:args.limit] if args.limit else remaining
         for entry in selected:
             sol=entry['solution']
             r,v=bb_release_state(sol['yaw_rad'],sol['pitch_rad'],sol['speed_mps'],position,
@@ -466,7 +540,7 @@ def run(args):
             row=dict(entry,status='dispatching',dispatch_wall_time_ns=time.time_ns(),
                      commanded_delay_s=goal.throw_time,nominal_release_wall_s=time.time()+args.delay,
                      mocap_count_before=cache['mocap_count'])
-            session['throws'].append(row); save()
+            session['throws'].append(row); save()  # pre-dispatch checkpoint
             # A timeout is ambiguous, never retry it automatically.
             outstanding=True
             # Timestamp immediately before action dispatch, after checkpoint I/O.
@@ -477,7 +551,9 @@ def run(args):
                                            dispatched+args.delay+entry['capture_duration_s']]
             last_flight_end=time.monotonic()+args.delay+entry['capture_duration_s']+args.pause
             future=client.send_goal_async(goal)
-            save(); emit('dispatch',throw=row)
+            # No checkpoint here (the goal-response save follows); each save costs
+            # ~25-55 ms at full-session size. The event carries the exact times.
+            emit('dispatch',throw=row)
             print('BB THROW %d/%d: do not throw refill balls until REFILL is printed.'
                   %(selected_idx+1,len(selected)),flush=True)
             spin_until(future.done,10,'action goal response')
@@ -501,25 +577,21 @@ def run(args):
             # Callback spacing is diagnostic only (runner I/O inflates it).
             row['mocap_max_receive_gap_s']=cache['mocap_max_gap']
             row['mocap_max_source_gap_s']=stream.max_gap
-            problem=stream.problem()
-            if problem:
-                # This throw's flight is unusable, the session is not: record it,
-                # skip it in analysis and carry on. Stale mocap (>1 s) still stops
-                # via live(); repeated failures stop as systemic.
-                row.update(capture_complete=False,capture_rejected=problem)
+            # A bad capture makes this throw's flight unusable, not the session:
+            # record it, skip it in analysis and carry on. Stale mocap (>1 s)
+            # still stops via live(); repeated failures stop as systemic.
+            fields,bad_captures,stop=capture_decision(stream.problem(),bad_captures)
+            row.update(fields)
+            if not row['capture_complete']:
                 session['incomplete_capture_throw_indices'].append(row['throw_idx'])
-                bad_captures+=1
                 save(); emit('capture_rejected',throw=row)
                 print('Throw %d / %d: cell %d, firmware OK but CAPTURE REJECTED (%s); continuing'
-                      %(len(session['throws']),len(selected),entry['cell_idx'],problem),flush=True)
-                if bad_captures>=MAX_CONSECUTIVE_BAD_CAPTURES:
-                    raise RuntimeError('%d consecutive rejected captures; check QTM streaming'%bad_captures)
+                      %(len(session['throws']),len(selected),entry['cell_idx'],row['capture_rejected']),flush=True)
+                if stop: raise RuntimeError(stop)
                 continue
-            bad_captures=0
-            row['capture_complete']=True
             save(); emit('capture_complete',throw=row)
             print('Throw %d / %d: cell %d, firmware OK'%(len(session['throws']),len(selected),entry['cell_idx']),flush=True)
-        session['status']='completed_subset' if len(selected)<len(feasible) else 'completed'
+        session['status']='completed_subset' if len(selected)<len(remaining) else 'completed'
     except (Exception,KeyboardInterrupt) as error:
         session.update(status='interrupted' if isinstance(error,KeyboardInterrupt) else 'failed',error=str(error),
                        outstanding_action_uncertain=outstanding)
@@ -595,6 +667,9 @@ def main():
     p.add_argument('--timeout',type=float,default=60.,help='maximum wait for preflight/reload, seconds')
     p.add_argument('--limit',type=int,help='pilot batch: execute at most N feasible entries')
     p.add_argument('--check-only',action='store_true',help='live preflight and reachability only; no throws or recorder')
+    p.add_argument('--expect-solver-sha',metavar='HEX',help='abort unless the imported solver sha256 starts with this (printed by --check-only)')
+    p.add_argument('--resume-from',type=Path,action='append',default=[],metavar='SESSION_JSON',
+                   help='earlier session.json of this plan (repeatable): skip entries it released and captured cleanly')
     args=parser.parse_args()
     try:
         if args.command=='plan':
