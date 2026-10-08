@@ -134,6 +134,16 @@ class PlanTests(unittest.TestCase):
             flush=lambda:events.append('flush'),say=lambda text:events.append('say'))
         self.assertEqual(events,['flush','read','say','flush','read'])
 
+    def test_only_yaw_not_settled_aborts_are_retried(self):
+        # 2026-10-08 sessions stopped on THROW_ABORTED_NOT_SETTLED (axis=YAW);
+        # the firmware aborts before hand motion and keeps the ball (IDLE with
+        # ball_in_hand 0.16 s later in both bags), so those are re-sent.
+        retry=calibration.settle_abort_retryable
+        self.assertTrue(retry(41,0)); self.assertTrue(retry(41,2))     # YAW, BOTH
+        self.assertFalse(retry(41,1))                                    # PITCH only
+        for outcome in (0,1,2,3,4,32,33,34,35,36,37,38):
+            self.assertFalse(retry(outcome,0))
+
     def test_bad_capture_rejects_throw_and_stops_only_when_consecutive(self):
         state=0; outcomes=[]
         for problem in [None,'gap',None,'gap','gap','gap']:

@@ -176,3 +176,20 @@ Real pilots pooled through the new CLI: 15 accepted. The stopped throw is listed
 "capture incomplete". Originals are unchanged (md5). 35 tests pass (system 3.8 skips the MCAP test).
 Still untested on hardware: the carry-on path and resume. The simulator still uses
 gravity-only flights.
+
+## Follow-up: retry yaw NOT_SETTLED aborts (2026-10-09)
+
+Two full-campaign attempts (`20261008T233311_570387Z`, 20 throws; `20261008T233839_272481Z`,
+resumed, 6 throws) stopped on `THROW_ABORTED_NOT_SETTLED (axis=YAW)`. The yaw errors were
+−0.70° and −0.83°, inside the 1.0° tolerance, so the 100 ms settled-history term probably refused them. The commanded
+yaws were small (2.8°, 4.9°), but 5.5°/6.0° throws succeeded, so the abort is not
+deterministic. Firmware `handleThrowing_` aborts before hand motion with the ball
+retained. Both bags show THROWING → IDLE with `ball_in_hand` True 0.16 s later.
+
+The runner now re-sends that entry (YAW or BOTH axis only) up to `--max-attempts` (3).
+Each attempt is its own row. An entry still failing after the last attempt is
+recorded in `abandoned_throw_indices` and skipped. Every other refusal still stops the session.
+Also seen: in `233311` throw 15 the capture was rejected for a real 117 ms QTM source-stamp
+gap while receipt gaps stayed ≤49 ms. QTM itself skipped frames. The carry-on path
+worked as designed on hardware.
+Open: whether low-yaw targets abort systematically. Watch `abandoned_throw_indices`.

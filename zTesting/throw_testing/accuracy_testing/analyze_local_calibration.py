@@ -414,7 +414,8 @@ def analyse(session_paths, data_paths, out, exclude=(), extract_only=False):
         accepted += a; rejected += r
         summaries.append(dict(path=str(path), status=session.get('status'),
                               recording_needs_review=session.get('recording_needs_review', False),
-                              accepted=len(a), rejected=len(r), frames_skipped=skipped))
+                              accepted=len(a), rejected=len(r), frames_skipped=skipped,
+                              abandoned_not_settled=session.get('abandoned_throw_indices', [])))
     status = lambda key: (summaries[0][key] if len(summaries) == 1 else [s[key] for s in summaries])
     common = dict(sessions=summaries, session_status=status('status'),
                   recording_needs_review=status('recording_needs_review'))

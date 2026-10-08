@@ -148,6 +148,19 @@ class StreamMonitor:
         return None
 
 
+THROW_ABORTED_NOT_SETTLED = 41   # BallButlerCommandOutcome (protocol_config.h); checked at run start
+SETTLE_RETRY_AXES = (0, 2)       # CMD_RESULT detail0: 0=YAW, 1=PITCH, 2=BOTH
+
+
+def settle_abort_retryable(outcome, detail0):
+    """True for the firmware's yaw NOT_SETTLED abort, which fires before any hand
+    motion: the ball is retained and BB returns to IDLE (StateMachine.cpp
+    handleThrowing_), so re-sending the same command is safe. Every other
+    refusal or abort still stops the session.
+    """
+    return int(outcome) == THROW_ABORTED_NOT_SETTLED and int(detail0) in SETTLE_RETRY_AXES
+
+
 def capture_decision(problem, bad_captures, limit=MAX_CONSECUTIVE_BAD_CAPTURES):
     """Per-throw capture outcome: (row fields, new consecutive-bad count, stop reason).
 
@@ -385,7 +398,9 @@ def run(args):
     from std_msgs.msg import String
     from jugglebot.can.throw_ballistics import solve_throw_local, global_to_bb_local, bb_release_state
     from jugglebot import hardware_config as hw
-    from jugglebot.protocol_config import BallButlerStates
+    from jugglebot.protocol_config import BallButlerStates, BallButlerCommandOutcome
+    if int(BallButlerCommandOutcome.THROW_ABORTED_NOT_SETTLED)!=THROW_ABORTED_NOT_SETTLED:
+        raise RuntimeError('Installed protocol THROW_ABORTED_NOT_SETTLED differs from this runner; update it')
 
     plan=json.loads(args.plan.read_text(encoding='utf-8')); validate_plan(plan)
     if not finite([*args.schedule_to_mocap,args.s,args.delay,args.pause,args.timeout,args.ground_z,args.refill_settle]) or args.s<=0 or not 1<=args.delay<=30 or args.pause<0 or args.timeout<10 or args.refill_settle<0:
@@ -394,6 +409,8 @@ def run(args):
         raise ValueError('--limit must be positive.')
     if args.refill_every<1:
         raise ValueError('--refill-every must be at least 1.')
+    if args.max_attempts<1:
+        raise ValueError('--max-attempts must be at least 1.')
     if args.expect_solver_sha is not None and not re.fullmatch(r'[0-9a-f]{8,64}',args.expect_solver_sha):
         raise ValueError('--expect-solver-sha must be 8-64 lowercase hex characters (from --check-only).')
     try:
@@ -431,6 +448,7 @@ def run(args):
     session=dict(schema=SCHEMA,created_utc=stamp,plan=plan,plan_sha256=hashlib.sha256(args.plan.read_bytes()).hexdigest(),
                  schedule_to_mocap_mm=args.schedule_to_mocap,signed_s_mm=args.s,affine_applied=False,
                  columns_feed_bias_applied=False,throws=[],refill_intervals=[],incomplete_capture_throw_indices=[],
+                 abandoned_throw_indices=[],max_attempts=args.max_attempts,
                  refill_every=args.refill_every,ground_z_mm=args.ground_z,
                  resumed_from=[str(Path(path).resolve()) for path in args.resume_from],
                  status='preflight',bag=str(out/'bag'))
@@ -528,49 +546,66 @@ def run(args):
             # No refill throws are allowed in the intervening automatic block.
             if refill_due(selected_idx,args.refill_every):
                 operator_pause()
-            spin_until(ready,args.timeout,'BB ready after reload, fresh mocap, and idle orchestrator')
-            cache['mocap_max_gap']=0.; stream.reset()
-            latest=cache['calibration']
-            if latest is None or not latest.success or [latest.position_mm.x,latest.position_mm.y,latest.position_mm.z]!=position or latest.yaw_offset_rad!=cal.yaw_offset_rad:
-                raise RuntimeError('BB calibration changed during session; start a new session')
-            sol=entry['solution']; goal=BallButlerThrowCmd.Goal()
-            goal.yaw_angle_rad=sol['yaw_rad']; goal.pitch_angle_rad=sol['pitch_rad']; goal.throw_speed=sol['speed_mps']
-            goal.throw_time=max(0.,args.delay-hw.BB_OP_THROW_RELEASE_LATENCY_MS/1000.)
-            goal.suppress_announcement=True
-            row=dict(entry,status='dispatching',dispatch_wall_time_ns=time.time_ns(),
-                     commanded_delay_s=goal.throw_time,nominal_release_wall_s=time.time()+args.delay,
-                     mocap_count_before=cache['mocap_count'])
-            session['throws'].append(row); save()  # pre-dispatch checkpoint
-            # A timeout is ambiguous, never retry it automatically.
-            outstanding=True
-            # Timestamp immediately before action dispatch, after checkpoint I/O.
-            dispatched=time.time()
-            row['dispatch_wall_time_ns']=int(dispatched*1e9)
-            row['nominal_release_wall_s']=dispatched+args.delay
-            row['analysis_window_wall_s']=[dispatched+max(0,args.delay-.25),
-                                           dispatched+args.delay+entry['capture_duration_s']]
-            last_flight_end=time.monotonic()+args.delay+entry['capture_duration_s']+args.pause
-            future=client.send_goal_async(goal)
-            # No checkpoint here (the goal-response save follows); each save costs
-            # ~25-55 ms at full-session size. The event carries the exact times.
-            emit('dispatch',throw=row)
-            print('BB THROW %d/%d: do not throw refill balls until REFILL is printed.'
-                  %(selected_idx+1,len(selected)),flush=True)
-            spin_until(future.done,10,'action goal response')
-            handle=future.result()
-            if not handle.accepted:
-                row['status']='rejected'; outstanding=False; save()
-                raise RuntimeError('Bridge rejected throw; stopped without retry')
-            row['goal_uuid']=goal_uuid_bytes(handle.goal_id); row['status']='accepted'; save()
-            result_future=handle.get_result_async()
-            spin_until(result_future.done,args.delay+15,'firmware terminal throw outcome')
-            response=result_future.result(); result=response.result
-            outstanding=False
-            row.update(status='released' if result.success else 'failed',action_status=int(response.status),
-                       outcome=int(result.outcome),message=result.message,detail0=int(result.detail0),detail1=int(result.detail1),
-                       result_wall_time_ns=time.time_ns())
-            save(); emit('result',throw=row)
-            if not result.success: raise RuntimeError('Firmware refused/aborted throw: '+result.message)
+            # NOT_SETTLED (yaw) aborts fire before any hand motion; the firmware
+            # keeps the ball and returns to IDLE, so the same entry is re-sent.
+            # Each attempt is its own row (status 'failed' rows are never paired
+            # with mocap). Capped so a target that never settles cannot stall
+            # the session: it is recorded and skipped (--resume-from retries it).
+            for attempt in range(1,args.max_attempts+1):
+                spin_until(ready,args.timeout,'BB ready after reload, fresh mocap, and idle orchestrator')
+                cache['mocap_max_gap']=0.; stream.reset()
+                latest=cache['calibration']
+                if latest is None or not latest.success or [latest.position_mm.x,latest.position_mm.y,latest.position_mm.z]!=position or latest.yaw_offset_rad!=cal.yaw_offset_rad:
+                    raise RuntimeError('BB calibration changed during session; start a new session')
+                sol=entry['solution']; goal=BallButlerThrowCmd.Goal()
+                goal.yaw_angle_rad=sol['yaw_rad']; goal.pitch_angle_rad=sol['pitch_rad']; goal.throw_speed=sol['speed_mps']
+                goal.throw_time=max(0.,args.delay-hw.BB_OP_THROW_RELEASE_LATENCY_MS/1000.)
+                goal.suppress_announcement=True
+                row=dict(entry,status='dispatching',dispatch_wall_time_ns=time.time_ns(),
+                         commanded_delay_s=goal.throw_time,nominal_release_wall_s=time.time()+args.delay,
+                         mocap_count_before=cache['mocap_count'],attempt=attempt)
+                session['throws'].append(row); save()  # pre-dispatch checkpoint
+                # A timeout is ambiguous, never retry it automatically.
+                outstanding=True
+                # Timestamp immediately before action dispatch, after checkpoint I/O.
+                dispatched=time.time()
+                row['dispatch_wall_time_ns']=int(dispatched*1e9)
+                row['nominal_release_wall_s']=dispatched+args.delay
+                row['analysis_window_wall_s']=[dispatched+max(0,args.delay-.25),
+                                               dispatched+args.delay+entry['capture_duration_s']]
+                last_flight_end=time.monotonic()+args.delay+entry['capture_duration_s']+args.pause
+                future=client.send_goal_async(goal)
+                # No checkpoint here (the goal-response save follows); each save costs
+                # ~25-55 ms at full-session size. The event carries the exact times.
+                emit('dispatch',throw=row)
+                print('BB THROW %d/%d: do not throw refill balls until REFILL is printed.'
+                      %(selected_idx+1,len(selected)),flush=True)
+                spin_until(future.done,10,'action goal response')
+                handle=future.result()
+                if not handle.accepted:
+                    row['status']='rejected'; outstanding=False; save()
+                    raise RuntimeError('Bridge rejected throw; stopped without retry')
+                row['goal_uuid']=goal_uuid_bytes(handle.goal_id); row['status']='accepted'; save()
+                result_future=handle.get_result_async()
+                spin_until(result_future.done,args.delay+15,'firmware terminal throw outcome')
+                response=result_future.result(); result=response.result
+                outstanding=False
+                row.update(status='released' if result.success else 'failed',action_status=int(response.status),
+                           outcome=int(result.outcome),message=result.message,detail0=int(result.detail0),detail1=int(result.detail1),
+                           result_wall_time_ns=time.time_ns())
+                save(); emit('result',throw=row)
+                if result.success: break
+                if not settle_abort_retryable(result.outcome,result.detail0):
+                    raise RuntimeError('Firmware refused/aborted throw: '+result.message)
+                if attempt<args.max_attempts:
+                    print('Throw %d/%d: %s; ball retained, re-sending (attempt %d of %d)'
+                          %(selected_idx+1,len(selected),result.message,attempt+1,args.max_attempts),flush=True)
+                    continue
+                session['abandoned_throw_indices'].append(entry['throw_idx'])
+                save(); emit('abandoned',throw=row)
+                print('Throw %d/%d: cell %d still not settled after %d attempts; skipped, continuing'
+                      %(selected_idx+1,len(selected),entry['cell_idx'],args.max_attempts),flush=True)
+            if not result.success: continue
             spin_until(lambda: time.monotonic()>=last_flight_end,args.delay+entry['capture_duration_s']+args.pause+2,'flight observation window')
             if not live(): raise RuntimeError('Lost fresh heartbeat/mocap or orchestrator left IDLE; stopped')
             row['mocap_count_after']=cache['mocap_count']
@@ -667,6 +702,7 @@ def main():
     p.add_argument('--timeout',type=float,default=60.,help='maximum wait for preflight/reload, seconds')
     p.add_argument('--limit',type=int,help='pilot batch: execute at most N feasible entries')
     p.add_argument('--check-only',action='store_true',help='live preflight and reachability only; no throws or recorder')
+    p.add_argument('--max-attempts',type=int,default=3,help='sends per entry when BB aborts with yaw NOT_SETTLED (ball retained); then skip it')
     p.add_argument('--expect-solver-sha',metavar='HEX',help='abort unless the imported solver sha256 starts with this (printed by --check-only)')
     p.add_argument('--resume-from',type=Path,action='append',default=[],metavar='SESSION_JSON',
                    help='earlier session.json of this plan (repeatable): skip entries it released and captured cleanly')

@@ -232,6 +232,16 @@ throw only.
 Final rosbag metadata is checked for nonempty raw mocap, BB heartbeat,
 calibration and event topics before reporting recording success.
 
+**Yaw NOT_SETTLED aborts are re-sent.** BB aborts with
+`THROW_ABORTED_NOT_SETTLED` (axis YAW or BOTH) before any hand motion, keeps the
+ball and returns to IDLE (seen 0.16 s after the abort in the 2026-10-08 bags).
+The runner waits for readiness and re-sends the same entry, up to
+`--max-attempts` sends (default 3). Each send is its own row (`attempt`); the
+failed ones are never paired with mocap. An entry still unsettled after the last
+attempt is recorded in `abandoned_throw_indices` and skipped, and the session
+continues. `--resume-from` will throw it again. Every other refusal or abort,
+including PITCH-only NOT_SETTLED, still stops the session.
+
 Ctrl-C prevents subsequent throws. **A goal already sent cannot be cancelled
 by the bridge**; the recorder stays up through its predicted flight window
 before closing. Ambiguous goal/result timeouts are marked `unknown_do_not_retry`;
