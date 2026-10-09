@@ -165,6 +165,39 @@ class AnalysisTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'solver_sha256'):
                 analyse(sessions, data, path/'out3', extract_only=True)
 
+    def test_validation_verdict_against_preregistered_criteria(self):
+        from analyze_local_calibration import validation_verdict
+        rng = np.random.default_rng(4)
+        good = rng.normal(0, 14, (80, 2)); core = np.arange(80) < 20
+        self.assertEqual(validation_verdict(good, core, 80)['verdict'], 'PASS')
+        self.assertEqual(validation_verdict(good + [10, 0], core, 80)['verdict'], 'FAIL')     # residual bias
+        self.assertEqual(validation_verdict(good*2.2, core, 80)['verdict'], 'FAIL')           # too much scatter
+        self.assertEqual(validation_verdict(good[:50], core[:50], 50)['verdict'], 'INCONCLUSIVE')
+        self.assertEqual(validation_verdict(good, core, 100)['verdict'], 'INCONCLUSIVE')      # 20% rejected
+
+    def test_corrected_session_only_checked_extract_only(self):
+        from analyze_local_calibration import analyse
+        row = dict(self.hardware_row(), cell_idx=0, status='released', capture_complete=True,
+                   analysis_window_wall_s=[99.75, 101.6])
+        frames, truth, _ = hardware_like_flight(row['predicted_release_position_mm'],
+                                                row['predicted_release_velocity_mm_s'])
+        session = dict(affine_applied=True, signed_s_mm=105.65, correction=dict(sha256='c', path='x', matrix=[]),
+                       bb_pose=dict(position_mm=[0, 0, 0], yaw_offset_rad=0.), refill_intervals=[],
+                       plan=dict(cells=[dict(cell_idx=0, dense=True)]), throws=[row])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path/'s.json').write_text(json.dumps(session))
+            with (path/'o.jsonl').open('w') as stream:
+                for t, pts in frames:
+                    stream.write(json.dumps(dict(wall_time_s=t, points_mm=pts.tolist()))+'\n')
+            with self.assertRaisesRegex(ValueError, 'extract-only'):
+                analyse(path/'s.json', path/'o.jsonl', path/'out')
+            report = analyse(path/'s.json', path/'o.jsonl', path/'out', extract_only=True)
+        self.assertEqual(report['mode'], 'validation_corrected_extraction')
+        self.assertEqual(report['validation']['verdict'], 'INCONCLUSIVE')                     # one throw
+        np.testing.assert_allclose(report['validation']['mean_mm'],
+                                   np.asarray(report['before']['mean_vector_mm']), atol=1e-6)
+
     def test_forward_inverse_direction_and_rank(self):
         commands = np.array([[x, y] for x in (-300, 0, 300) for y in (-300, 0, 300)])
         matrix = np.array([[1.02, .01, 10], [-.02, .99, 20]])

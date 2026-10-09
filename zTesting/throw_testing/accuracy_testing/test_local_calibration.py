@@ -144,6 +144,40 @@ class PlanTests(unittest.TestCase):
         for outcome in (0,1,2,3,4,32,33,34,35,36,37,38):
             self.assertFalse(retry(outcome,0))
 
+    def candidate(self, directory, **provenance):
+        values=dict(frame='BB-local XY mm',signed_s_mm=105.65,requires_corrected_positive_s=True,
+                    target_bounds_bb_local_mm=[[300,100],[1600,1000]],solver_sha256='bbb')
+        values.update(provenance)
+        path=Path(directory)/'candidate.json'
+        path.write_text(json.dumps(dict(matrix=[[.93,-.02,37.6],[-.017,.985,15.6]],provenance=values)))
+        return path
+
+    def test_correction_requires_matching_positive_s_and_bb_local_frame(self):
+        with tempfile.TemporaryDirectory() as directory:
+            loaded=calibration.load_correction(self.candidate(directory),105.65)
+            self.assertEqual(len(loaded['sha256']),64)
+            for bad,s in ((dict(signed_s_mm=-105.65),105.65),({},-105.65),(dict(frame='mocap'),105.65)):
+                with self.assertRaises(ValueError):
+                    calibration.load_correction(self.candidate(directory,**bad),s)
+
+    def test_validation_schedule_commands_corrected_point_keeps_desired_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            correction=calibration.load_correction(self.candidate(directory),105.65)
+        solved=[]
+        def solver(x,y,z,yaw_s_offset_mm):
+            solved.append((x,y)); return SimpleNamespace(yaw_rad=0.,pitch_rad=1.,speed_mps=3.,tof_s=.9)
+        plan=dict(schedule=[dict(throw_idx=0,cell_idx=0,target_mm=[1000.,500.,830.]),
+                            dict(throw_idx=1,cell_idx=1,target_mm=[2000.,500.,830.])])
+        identity=lambda x,y,z,bb_position_mm,yaw_offset_rad:(x,y,z)
+        good,bad=calibration.prepare_schedule(plan,[0,0,0],0.,[0.,0.],solver,identity,105.65,correction)
+        self.assertEqual(good[0]['target_bb_local_mm'][:2],[1000.,500.])         # desired point kept
+        self.assertAlmostEqual(good[0]['command_bb_local_mm'][0],.93*1000-.02*500+37.6)
+        self.assertEqual(solved,[tuple(good[0]['command_bb_local_mm'][:2])])     # solver sees the command
+        self.assertIn('outside',bad[0]['reason'])                                 # never extrapolated
+        with self.assertRaisesRegex(ValueError,'different aim correction'):
+            calibration.completed_throws([dict(plan_sha256='p',signed_s_mm=105.65,schedule_to_mocap_mm=[0.,0.],
+                                               affine_applied=False,throws=[])],'p',105.65,[0.,0.],None,correction['sha256'])
+
     def test_bad_capture_rejects_throw_and_stops_only_when_consecutive(self):
         state=0; outcomes=[]
         for problem in [None,'gap',None,'gap','gap','gap']:

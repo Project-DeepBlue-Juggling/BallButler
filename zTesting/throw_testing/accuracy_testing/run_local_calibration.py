@@ -3,7 +3,7 @@
 
 Python 3.8 compatible. `plan` is offline and stdlib-only. `run` needs the
 sourced Jugglebot ROS2 environment on the Jetson. Uses the production inverse
-ballistics with an explicit positive hand offset, no affine, and the awaitable
+ballistics with an explicit positive hand offset, no affine (or, for a validation run, an explicit candidate correction), and the awaitable
 bb/throw action. Does not edit the running node or production configuration.
 See LOCAL_CALIBRATION.md for frames, capture, and resumption instructions.
 """
@@ -174,7 +174,38 @@ def capture_decision(problem, bad_captures, limit=MAX_CONSECUTIVE_BAD_CAPTURES):
     return dict(capture_complete=False, capture_rejected=problem), bad, stop
 
 
-def completed_throws(previous, plan_sha256, signed_s, schedule_to_mocap, solver_sha256=None):
+def load_correction(path, signed_s):
+    """Read a candidate correction (desired BB-local XY -> commanded BB-local XY).
+
+    Used only to VALIDATE a candidate on hardware (--apply-correction). It must
+    have been fitted with the same signed s it is applied with.
+    """
+    path = Path(path)
+    raw = path.read_bytes()
+    data = json.loads(raw.decode('utf-8'))
+    matrix = data.get('matrix')
+    if (not isinstance(matrix, list) or len(matrix) < 2 or any(len(row) != 3 for row in matrix[:2])
+            or not finite([v for row in matrix[:2] for v in row])):
+        raise ValueError('Correction %s: need a finite 2x3 "matrix"' % path)
+    provenance = data.get('provenance', {})
+    if provenance.get('frame') != 'BB-local XY mm':
+        raise ValueError('Correction %s is not a BB-local XY candidate' % path)
+    if provenance.get('signed_s_mm') != signed_s or (provenance.get('requires_corrected_positive_s') and signed_s <= 0):
+        raise ValueError('Correction %s was fitted with s=%r; this run uses s=%r'
+                         % (path, provenance.get('signed_s_mm'), signed_s))
+    bounds = provenance.get('target_bounds_bb_local_mm')
+    return dict(path=str(path.resolve()), sha256=hashlib.sha256(raw).hexdigest(),
+                matrix=[[float(v) for v in row] for row in matrix[:2]], bounds=bounds,
+                solver_sha256=provenance.get('solver_sha256'), provenance=provenance)
+
+
+def apply_correction(matrix, x, y):
+    (a, b, tx), (c, d, ty) = matrix
+    return a*x + b*y + tx, c*x + d*y + ty
+
+
+def completed_throws(previous, plan_sha256, signed_s, schedule_to_mocap, solver_sha256=None,
+                     correction_sha256=None):
     """throw_idx values already released AND cleanly captured in earlier sessions.
 
     For --resume-from: those schedule entries are skipped, everything else
@@ -191,8 +222,9 @@ def completed_throws(previous, plan_sha256, signed_s, schedule_to_mocap, solver_
         for key, value in checks:
             if session.get(key) != value:
                 raise ValueError('Cannot resume: earlier session has %s=%r, this run %r' % (key, session.get(key), value))
-        if session.get('affine_applied') is not False:
-            raise ValueError('Cannot resume: earlier session did not bypass the affine')
+        if bool(session.get('affine_applied')) != bool(correction_sha256) or \
+                session.get('correction', {}).get('sha256') != correction_sha256:
+            raise ValueError('Cannot resume: earlier session used a different aim correction')
         done.update(row['throw_idx'] for row in session.get('throws', [])
                     if row.get('status') == 'released' and row.get('capture_complete'))
     return done
@@ -371,20 +403,36 @@ def validate_plan(plan):
         ids.add(entry['throw_idx'])
 
 
-def prepare_schedule(plan, position, yaw_offset, translation, solver, transform, signed_s):
+def prepare_schedule(plan, position, yaw_offset, translation, solver, transform, signed_s, correction=None):
+    """Solve every schedule entry. target_* always stay the DESIRED landing point.
+
+    With a correction (validation runs), the desired BB-local XY is mapped to a
+    commanded XY before solving, exactly as production would; targets outside
+    the region the correction was fitted on are skipped, never extrapolated.
+    """
     feasible, skipped = [], []
+    bounds = correction and correction.get('bounds')
     for entry in plan['schedule']:
         x,y,z=entry['target_mm']
         world=[x+translation[0],y+translation[1],z]
-        local=transform(*world, bb_position_mm=position, yaw_offset_rad=yaw_offset)
+        local=list(transform(*world, bb_position_mm=position, yaw_offset_rad=yaw_offset))
+        command=local
+        if correction:
+            if bounds and not (bounds[0][0] <= local[0] <= bounds[1][0] and bounds[0][1] <= local[1] <= bounds[1][1]):
+                skipped.append(dict(entry, reason='outside the BB-local region the correction was fitted on'))
+                continue
+            command=[*apply_correction(correction['matrix'], local[0], local[1]), local[2]]
         try:
-            sol=solver(*local,yaw_s_offset_mm=signed_s)
+            sol=solver(*command,yaw_s_offset_mm=signed_s)
         except ValueError as error:
             skipped.append(dict(entry, reason=str(error)))
             continue
-        feasible.append(dict(entry,target_global_mm=world,target_bb_local_mm=list(local),
-                             solution=dict(yaw_rad=sol.yaw_rad,pitch_rad=sol.pitch_rad,
-                                           speed_mps=sol.speed_mps,tof_s=sol.tof_s)))
+        row=dict(entry,target_global_mm=world,target_bb_local_mm=local,
+                 solution=dict(yaw_rad=sol.yaw_rad,pitch_rad=sol.pitch_rad,
+                               speed_mps=sol.speed_mps,tof_s=sol.tof_s))
+        if correction:
+            row['command_bb_local_mm']=command
+        feasible.append(row)
     return feasible,skipped
 
 
@@ -417,6 +465,10 @@ def run(args):
         previous=[json.loads(Path(path).read_text(encoding='utf-8')) for path in args.resume_from]
     except (OSError,ValueError) as error:
         raise ValueError('Cannot read --resume-from session: %s'%error)
+    try:
+        correction=load_correction(args.apply_correction,args.s) if args.apply_correction else None
+    except (OSError,ValueError) as error:
+        raise ValueError('Cannot use --apply-correction: %s'%error)
     if not args.check_only and not sys.stdin.isatty():
         raise ValueError('Run in an interactive terminal: refill pauses require Enter (not redirected stdin).')
     stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ')
@@ -446,7 +498,8 @@ def run(args):
     client=ActionClient(node,BallButlerThrowCmd,'/bb/throw')
     recorder=None; record_log=None; outstanding=False; last_flight_end=0.; bad_captures=0
     session=dict(schema=SCHEMA,created_utc=stamp,plan=plan,plan_sha256=hashlib.sha256(args.plan.read_bytes()).hexdigest(),
-                 schedule_to_mocap_mm=args.schedule_to_mocap,signed_s_mm=args.s,affine_applied=False,
+                 schedule_to_mocap_mm=args.schedule_to_mocap,signed_s_mm=args.s,affine_applied=bool(correction),
+                 correction=({k:v for k,v in correction.items()} if correction else {}),
                  columns_feed_bias_applied=False,throws=[],refill_intervals=[],incomplete_capture_throw_indices=[],
                  abandoned_throw_indices=[],max_attempts=args.max_attempts,
                  refill_every=args.refill_every,ground_z_mm=args.ground_z,
@@ -505,14 +558,21 @@ def run(args):
             raise RuntimeError('Installed solver sha256 %s does not match --expect-solver-sha %s; '
                                'source the workspace the live stack runs'%(session['solver_sha256'][:16],args.expect_solver_sha))
         session['hardware_constants']={k:v for k,v in vars(hw).items() if k.startswith('BB_') and isinstance(v,(str,int,float,bool))}
+        if correction and correction['solver_sha256'] and correction['solver_sha256']!=session['solver_sha256']:
+            raise RuntimeError('Correction was fitted with solver %s, installed solver is %s'
+                               %(correction['solver_sha256'][:8],session['solver_sha256'][:8]))
+        if correction:
+            print('VALIDATION RUN: applying %s (sha256 %s); targets are desired landing points'
+                  %(correction['path'],correction['sha256'][:8]),flush=True)
         feasible,skipped=prepare_schedule(plan,position,cal.yaw_offset_rad,args.schedule_to_mocap,
-                                           solve_throw_local,global_to_bb_local,args.s)
+                                           solve_throw_local,global_to_bb_local,args.s,correction)
         session.update(feasible_schedule=feasible,skipped_unreachable=skipped)
         print('%d feasible throws; %d skipped as unreachable. Output: %s'%(len(feasible),len(skipped),out),flush=True)
         if not feasible: raise RuntimeError('No reachable targets')
         # Resuming skips only cleanly captured releases; uncertain, failed or
         # rejected-capture entries are thrown again as fresh samples.
-        done=completed_throws(previous,session['plan_sha256'],args.s,args.schedule_to_mocap,session['solver_sha256'])
+        done=completed_throws(previous,session['plan_sha256'],args.s,args.schedule_to_mocap,session['solver_sha256'],
+                              correction and correction['sha256'])
         remaining=[e for e in feasible if e['throw_idx'] not in done]
         session['resume_skipped_throw_indices']=sorted(done)
         if previous:
@@ -703,6 +763,8 @@ def main():
     p.add_argument('--limit',type=int,help='pilot batch: execute at most N feasible entries')
     p.add_argument('--check-only',action='store_true',help='live preflight and reachability only; no throws or recorder')
     p.add_argument('--max-attempts',type=int,default=3,help='sends per entry when BB aborts with yaw NOT_SETTLED (ball retained); then skip it')
+    p.add_argument('--apply-correction',type=Path,metavar='CANDIDATE_JSON',
+                   help='VALIDATION run: map each desired BB-local target through this candidate before solving')
     p.add_argument('--expect-solver-sha',metavar='HEX',help='abort unless the imported solver sha256 starts with this (printed by --check-only)')
     p.add_argument('--resume-from',type=Path,action='append',default=[],metavar='SESSION_JSON',
                    help='earlier session.json of this plan (repeatable): skip entries it released and captured cleanly')

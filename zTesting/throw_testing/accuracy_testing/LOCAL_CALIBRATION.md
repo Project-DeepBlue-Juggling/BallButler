@@ -337,6 +337,50 @@ the old affine; do not stack the transforms or the old feed-bias compensation.
 Production configuration is unchanged. Confirm performance with a small
 corrected hardware pilot before using the fit for juggling.
 
+## Validating a candidate correction on hardware
+
+A candidate is validated by throwing **corrected** throws with the same runner,
+before anything in production changes. `--apply-correction` maps every
+desired BB-local target through the candidate (exactly as `ball_butler_node`
+would) and solves the commanded point with the same positive s. `target_*`
+fields stay the **desired** landing point and `command_bb_local_mm` records
+what was solved. Targets outside the region the candidate was fitted on are
+skipped, never extrapolated. The runner refuses a candidate fitted with a
+different s, frame or solver sha.
+
+`local_validation_plan.json` (seed 1042) is shifted half a grid step
+(+25, +25 mm) from the calibration grid. Every target is therefore a position
+the fit never saw. Each cell is thrown once and the dense core twice. With the
+2026-10-09 pose and candidate this gives 110 feasible throws over 95 cells,
+30 of them in the core, in about 27 min.
+
+```bash
+source ~/Desktop/Jugglebot-skills/ros_ws/install/setup.zsh
+python run_local_calibration.py run local_validation_plan.json --schedule-to-mocap 0.3 -0.6 \
+    --expect-solver-sha bbb80fa5 \
+    --apply-correction ~/bb_calibration_sessions/20261009T002142_931068Z/analysis/correction_candidate.json \
+    --check-only        # then repeat without --check-only, QTM continuous capture running
+~/Desktop/PDJ_venv/venv/bin/python analyze_local_calibration.py \
+    ~/bb_calibration_sessions/<validation session>/session.json --extract-only
+```
+
+A corrected session can only be analysed with `--extract-only`, so it can never
+be fitted as if it were uncorrected. Its `extraction_report.json` carries
+`validation`. The verdict is evaluated against criteria fixed **before** the
+run (`VALIDATION_CRITERIA` in `analyze_local_calibration.py`): errors in
+BB-local mm, measured minus desired.
+
+| criterion | value |
+|---|---|
+| mean, per axis | within ±6 mm |
+| per-throw RMS, all | ≤26 mm (predicted 21.8) |
+| per-throw RMS, core | ≤25 mm (predicted 21.3) |
+| for a verdict at all | ≥60 accepted throws, ≥10 core throws, ≥90 % of releases accepted; otherwise `INCONCLUSIVE` |
+
+Only a `PASS` justifies deploying the candidate (positive s + this matrix,
+replacing the old affine). On a `FAIL`, do not deploy; keep the session for
+diagnosis.
+
 ## Hardware pilot, 2026-10-07
 
 Session `~/bb_calibration_sessions/20261007T043306_968166Z` (10 throws,

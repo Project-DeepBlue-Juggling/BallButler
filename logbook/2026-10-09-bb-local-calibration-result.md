@@ -10,6 +10,13 @@ related_entries:
 files_changed:
   - logbook/2026-10-09-bb-local-calibration-result.md
   - logbook/INDEX.md
+  - zTesting/throw_testing/accuracy_testing/run_local_calibration.py
+  - zTesting/throw_testing/accuracy_testing/analyze_local_calibration.py
+  - zTesting/throw_testing/accuracy_testing/test_local_calibration.py
+  - zTesting/throw_testing/accuracy_testing/test_analysis_local_calibration.py
+  - zTesting/throw_testing/accuracy_testing/LOCAL_CALIBRATION.md
+  - zTesting/throw_testing/accuracy_testing/local_validation_plan.json
+  - zTesting/throw_testing/accuracy_testing/local_validation_plan.html
 subsystem:
   - calibration
   - throwing
@@ -94,6 +101,24 @@ y 195–928 mm, catch z 830 mm, and this mounting of BB only.
 
 The production change (s sign + affine) is prepared separately. It is **not deployed**
 until a corrected hardware validation run passes; see Outcome.
+
+### Validation set-up (agreed 2026-10-09; criteria fixed before the run)
+
+- **Runner:** `--apply-correction` maps each desired BB-local target through the candidate and solves the command with s = +105.65.
+  - `target_*` stays the desired point; `command_bb_local_mm` records the solved point.
+  - Targets outside the fitted region are skipped.
+  - The runner refuses a candidate whose s, frame or solver sha differs.
+- **Plan:** `local_validation_plan.json` (sha256 `039355da…`, seed 1042).
+  - The core is shifted +25/+25 mm, half a grid step, so every target is a position the fit never saw.
+  - Each cell is thrown once and the core twice.
+  - Offline, against the installed solver and the 2026-10-09 pose: 110 feasible throws over 95 cells, 30 in the core, about 27 min.
+  - This replaces "the first 80 throws of a seed-1042 plan" agreed earlier. That would give only 11 core throws, barely above the 10-throw minimum, and would reuse fitted positions.
+- **Criteria** (`VALIDATION_CRITERIA`, errors in BB-local mm, measured minus desired):
+  - mean within ±6 mm per axis;
+  - per-throw RMS ≤26 mm overall and ≤25 mm in the core (predicted 21.8 / 21.3);
+  - a verdict needs ≥60 accepted throws, ≥10 core throws and ≥90 % of releases accepted, otherwise INCONCLUSIVE;
+  - only PASS justifies deployment.
+- **Analysis:** corrected sessions are analysable only with `--extract-only`, so they can never be fitted as uncorrected.
 
 ## Outcome
 

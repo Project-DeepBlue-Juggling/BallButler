@@ -330,7 +330,34 @@ def fit_forward(command, measured):
     return np.c_[matrix, offset], np.c_[inverse, -inverse@offset]
 
 
-POOLED_KEYS = ('plan_sha256', 'solver_sha256', 'signed_s_mm', 'schedule_to_mocap_mm')
+POOLED_KEYS = ('plan_sha256', 'solver_sha256', 'signed_s_mm', 'schedule_to_mocap_mm', 'affine_applied')
+
+# Pass/fail for a corrected-throw hardware validation run (--apply-correction),
+# fixed 2026-10-09 BEFORE the run, from the 20261009T002142_931068Z held-out
+# prediction (21.8 mm grid / 21.3 mm core per throw; per-throw sigma ~19 mm).
+# Errors are BB-local, measured landing minus DESIRED target.
+VALIDATION_CRITERIA = dict(max_abs_mean_mm=6.0, max_rms_mm=26.0, max_core_rms_mm=25.0,
+                           min_accepted=60, min_core_accepted=10, min_accepted_fraction=.9)
+
+
+def validation_verdict(errors, core, released, criteria=VALIDATION_CRITERIA):
+    """PASS / FAIL / INCONCLUSIVE for corrected throws against pre-registered criteria."""
+    errors = np.asarray(errors, float).reshape(-1, 2); core = np.asarray(core, bool)
+    rms = lambda e: float(np.sqrt(np.mean(np.sum(e*e, axis=1)))) if len(e) else None
+    result = dict(criteria=criteria, n=len(errors), n_core=int(core.sum()), released=released,
+                  mean_mm=errors.mean(axis=0).tolist() if len(errors) else None,
+                  rms_mm=rms(errors), core_rms_mm=rms(errors[core]))
+    if (len(errors) < criteria['min_accepted'] or core.sum() < criteria['min_core_accepted']
+            or len(errors) < criteria['min_accepted_fraction']*released):
+        result['verdict'] = 'INCONCLUSIVE'
+        result['why'] = 'too few accepted throws (overall, core, or fraction of releases)'
+        return result
+    checks = dict(mean=bool(np.all(np.abs(errors.mean(axis=0)) <= criteria['max_abs_mean_mm'])),
+                  rms=result['rms_mm'] <= criteria['max_rms_mm'],
+                  core_rms=result['core_rms_mm'] <= criteria['max_core_rms_mm'])
+    result['checks'] = checks
+    result['verdict'] = 'PASS' if all(checks.values()) else 'FAIL'
+    return result
 
 
 def parse_exclusions(values, sessions):
@@ -348,7 +375,7 @@ def parse_exclusions(values, sessions):
     return out
 
 
-def load_sessions(paths):
+def load_sessions(paths, allow_corrected=False):
     """Sessions to pool must share plan, solver, signed s and frame translation.
 
     BB pose may differ between sessions (e.g. recalibrated after a restart):
@@ -357,11 +384,13 @@ def load_sessions(paths):
     sessions = []
     for path in paths:
         session = json.loads(Path(path).read_text(encoding='utf-8'))
-        if session.get('affine_applied') is not False or session.get('signed_s_mm', 0) <= 0:
-            raise ValueError('Expected positive-s calibration with affine disabled: %s' % path)
+        if session.get('signed_s_mm', 0) <= 0 or (session.get('affine_applied') is not False and not allow_corrected):
+            raise ValueError('Expected positive-s calibration with affine disabled: %s '
+                             '(a corrected validation session can only be checked with --extract-only)' % path)
         sessions.append(session)
-    for key in POOLED_KEYS:
-        if len(set(json.dumps(s.get(key)) for s in sessions)) > 1:
+    for key in POOLED_KEYS + ('correction',):
+        value = lambda s: (s.get('correction') or {}).get('sha256') if key == 'correction' else s.get(key)
+        if len(set(json.dumps(value(s)) for s in sessions)) > 1:
             raise ValueError('Sessions differ in %s; they cannot be pooled' % key)
     return sessions
 
@@ -405,7 +434,7 @@ def analyse(session_paths, data_paths, out, exclude=(), extract_only=False):
     data_paths = [Path(data_paths)] if isinstance(data_paths, (str, Path)) else [Path(p) for p in data_paths]
     if len(data_paths) != len(session_paths):
         raise ValueError('Need one data path per session')
-    sessions = load_sessions(session_paths)
+    sessions = load_sessions(session_paths, allow_corrected=extract_only)
     exclusions = parse_exclusions(exclude, len(sessions))
     accepted, rejected, summaries = [], [], []
     for k, (path, session, data) in enumerate(zip(session_paths, sessions, data_paths)):
@@ -427,6 +456,18 @@ def analyse(session_paths, data_paths, out, exclude=(), extract_only=False):
         if accepted:
             report['before'] = stats(np.asarray([r['landing_global_mm'][:2] for r in accepted]) -
                                      np.asarray([r['target_global_mm'][:2] for r in accepted]))
+        if sessions[0].get('affine_applied'):
+            # Validation run: target_* are desired points; the candidate was applied.
+            poses = [s['bb_pose'] for s in sessions]
+            errors = [local([r['landing_global_mm'][:2]], poses[r['session_index']])[0] -
+                      local([r['target_global_mm'][:2]], poses[r['session_index']])[0] for r in accepted]
+            dense = {c['cell_idx'] for c in sessions[0]['plan']['cells'] if c.get('dense')}
+            released = sum(1 for s in sessions for r in s['throws'] if r.get('status') == 'released')
+            report['mode'] = 'validation_corrected_extraction'
+            report['correction'] = dict((k, sessions[0]['correction'].get(k)) for k in ('path', 'sha256', 'matrix'))
+            report['validation'] = validation_verdict(errors, [r['cell_idx'] in dense for r in accepted], released)
+            print('VALIDATION %s: %s' % (report['validation']['verdict'],
+                  json.dumps(dict((k, report['validation'][k]) for k in ('n', 'n_core', 'mean_mm', 'rms_mm', 'core_rms_mm')))), flush=True)
         write_json(out/'extraction_report.json', report)
         return report
     groups = sorted(set(r['cell_idx'] for r in accepted))
