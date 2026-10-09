@@ -100,7 +100,7 @@ void Proprioception::flushDebug() {
 // --------------------------------------------------------------------
 Proprioception::Proprioception()
   : seq_(0),
-    yaw_deg_(0), pitch_deg_(0), hand_pos_rev_(0), hand_vel_rps_(0), hand_iq_a_(0),
+    yaw_deg_(0), yaw_vel_rps_(0), pitch_deg_(0), hand_pos_rev_(0), hand_vel_rps_(0), hand_iq_a_(0),
     yaw_ts_us_(0), pitch_ts_us_(0), hand_pv_ts_us_(0), hand_iq_ts_us_(0),
     valid_mask_(0) {}
 
@@ -112,6 +112,16 @@ void Proprioception::setYawDeg(float yaw_deg, uint64_t ts_us) {
   seq_++;                              // Start write (now odd)
   yaw_deg_   = yaw_deg;
   yaw_ts_us_ = ts_us ? ts_us : (uint64_t)micros();
+  valid_mask_ |= (1u << 0);
+  seq_++;                              // End write (now even)
+}
+
+void Proprioception::setYawPV(float yaw_deg, float yaw_vel_rps, uint64_t ts_us) {
+  IRQGuard g;
+  seq_++;                              // Start write (now odd)
+  yaw_deg_     = yaw_deg;
+  yaw_vel_rps_ = yaw_vel_rps;
+  yaw_ts_us_   = ts_us ? ts_us : (uint64_t)micros();
   valid_mask_ |= (1u << 0);
   seq_++;                              // End write (now even)
 }
@@ -191,6 +201,7 @@ uint32_t Proprioception::copyOnce(ProprioceptionData& out) const {
   asm volatile("" ::: "memory");  // Memory barrier
 
   out.yaw_deg       = yaw_deg_;
+  out.yaw_vel_rps   = yaw_vel_rps_;
   out.pitch_deg     = pitch_deg_;
   out.hand_pos_rev  = hand_pos_rev_;
   out.hand_vel_rps  = hand_vel_rps_;
@@ -231,6 +242,15 @@ bool Proprioception::getYaw(float& yaw_deg, uint64_t& ts_us) const {
   if (!(valid_mask_ & (1u << 0))) return false;
   yaw_deg = yaw_deg_;
   ts_us   = yaw_ts_us_;
+  return true;
+}
+
+bool Proprioception::getYawPV(float& yaw_deg, float& yaw_vel_rps, uint64_t& ts_us) const {
+  IRQGuard g;
+  if (!(valid_mask_ & (1u << 0))) return false;
+  yaw_deg     = yaw_deg_;
+  yaw_vel_rps = yaw_vel_rps_;
+  ts_us       = yaw_ts_us_;
   return true;
 }
 

@@ -92,6 +92,7 @@ void CanInterface::loop() {
   can1_.events();           // dispatch FIFO -> rxTrampoline_
   maybePrintSyncStats_();   // optional stats print
   maybePublishHeartbeat_(); // Ball Butler heartbeat publishing
+  maybePublishYawEstimate_(); // stamped yaw estimate, one frame per fresh yaw sample
   maybeCheckBallInHand_();  // check for ball in hand
 }
 
@@ -756,6 +757,44 @@ void CanInterface::publishHeartbeat_() {
 
   // Use centralized CAN ID from CanIds namespace
   sendRaw(CanIds::HEARTBEAT_CMD, frame, 8);
+}
+
+// ================================================================================
+// Stamped yaw estimate — YAW_ESTIMATE (0x7D8), 2026-10-09
+// ================================================================================
+// The 10 Hz heartbeat yaw reaches the host unstamped through three free-running
+// 10 Hz stages (a per-session 78-174 ms lag against mocap). This frame carries
+// the same Proprioception yaw once per FRESH YawAxis sample (150 Hz ISR), plus
+// how old that sample is at TX, so the can-bridge can stamp it at sample time
+// and forward it beside pitch/hand in BB_AXIS_ESTIMATES -> /bb/axis_estimates.
+//
+// Layout (8 bytes, little-endian):
+//   bytes 0-3 = yaw_deg  (float32, BB-local degrees, unwrapped — the heartbeat
+//               value before its [0,360) wrap and 0.01 deg truncation)
+//   bytes 4-5 = yaw_vel  (int16, deg/s / YawEstimateEncoding::vel_res_dps)
+//   bytes 6-7 = age_us   (uint16, micros64() at TX minus the sample's ISR
+//               micros64() stamp, saturating at 65535) — monotonic, no wall
+//               clock, so it is immune to time-sync slews
+// The heartbeat is untouched; its other consumers keep their 10 Hz yaw.
+void CanInterface::maybePublishYawEstimate_() {
+  float yaw_deg = 0.f, yaw_vel_rps = 0.f;
+  uint64_t ts_us = 0;
+  if (!PRO.getYawPV(yaw_deg, yaw_vel_rps, ts_us)) return;   // no yaw sample yet
+  if (ts_us == last_yaw_est_ts_us_) return;                  // already sent this sample
+  last_yaw_est_ts_us_ = ts_us;
+
+  const uint64_t now_us = micros64();
+  const uint64_t age64  = (now_us > ts_us) ? (now_us - ts_us) : 0;
+  const uint16_t age_us = (age64 > 65535u) ? 65535u : (uint16_t)age64;
+  const int16_t  vel_i  = clampToI16_(yaw_vel_rps * 360.0f / YawEstimateEncoding::vel_res_dps);
+
+  uint8_t frame[8];
+  memcpy(&frame[0], &yaw_deg, 4);          // Teensy 4 is little-endian
+  frame[4] = uint8_t(vel_i & 0xFF);
+  frame[5] = uint8_t((vel_i >> 8) & 0xFF);
+  frame[6] = uint8_t(age_us & 0xFF);
+  frame[7] = uint8_t((age_us >> 8) & 0xFF);
+  sendRaw(CanIds::YAW_ESTIMATE, frame, 8);
 }
 
 // ================================================================================

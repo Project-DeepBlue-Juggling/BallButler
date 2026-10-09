@@ -19,6 +19,7 @@ entries, which stay authoritative. Open the `.html` in a browser.
 
 | Date | Status | Type | Subsystem | Title | Entry |
 |------|--------|------|-----------|-------|-------|
+| 2026-10-09 | in-progress | feature | firmware, calibration | Stamped 100 Hz yaw: BB FW 6 sends YAW_ESTIMATE 0x7D8 per fresh 150 Hz sample; can-bridge FW 28 (Jugglebot) publishes it as bb_yaw on /bb/axis_estimates; headers regenerated (owner-tree delta: +0x7D8 + YAW_S_OFFSET_MM sign); compiled, not flashed | [bb-stamped-yaw-100hz](2026-10-09-bb-stamped-yaw-100hz.md) |
 | 2026-10-09 | tuned | investigation | calibration, throwing | Full 277-throw local calibration after BB reinstall: 275 accepted, uncorrected 54 mm RMS (bias +44/+9 mm, 8% radial gain); the affine validated on 110 corrected throws at 21.0 mm RMS (the predicted floor) with an 8 mm lateral mean traced to a 0.47° pose-calibration yaw difference between sessions — accepted and deployed (Jugglebot `bb-positive-s-affine-2026-10-09`) | [bb-local-calibration-result](2026-10-09-bb-local-calibration-result.md) |
 | 2026-10-07 | resolved | bugfix | calibration, tooling | Pilot extraction 0/10 → 10/10: ball carried rigid-body labels, gravity-only model wrong over full arc (drag + ~1° tilt), apex occlusion | [pilot-trajectory-extraction-fix](2026-10-07-pilot-trajectory-extraction-fix.md) |
 | 2026-10-06 | tuned | feature | calibration, tooling | Refill-aware analysis and 331-throw synthetic validation | [local-calibration-analysis](2026-10-06-local-calibration-analysis.md) |

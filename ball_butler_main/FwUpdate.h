@@ -73,11 +73,12 @@ namespace FwUpdate {
 // INFO reply is the only receipt that a COMMIT landed. Jugglebot pins the
 // expected value in teensy_link/rpc_args.py BB_FW_VERSION_EXPECTED.
 constexpr char     FW_NAME[]  = "ballbutler-main";
-constexpr uint16_t FW_VERSION = 5;   // 1: 2026-09-28 first image with the CAN receiver (USB-flashed)
+constexpr uint16_t FW_VERSION = 6;   // 1: 2026-09-28 first image with the CAN receiver (USB-flashed)
                                      // 2: 2026-09-28 no code change — the first CAN-flashed image; the version is the receipt
                                      // 3: 2026-09-28 no code change — receipt for the faster transfer (host sector pause 0.5 -> 0.12 s)
                                      // 4: 2026-09-28 no code change — receipt for the pipelined transfer (bridge FW 22, depth 4)
                                      // 5: 2026-09-30 Layer C yaw settle = 15-sample (100 ms) error history + 12 deg/s traverse bound (was instantaneous 3 deg/s)
+                                     // 6: 2026-10-09 YAW_ESTIMATE (0x7D8): stamped yaw per fresh 150 Hz sample for /bb/axis_estimates
 
 // Wire the receiver to the hardware it parks. Call first thing in setup(),
 // before canif.begin(): until attached, every command is ignored.

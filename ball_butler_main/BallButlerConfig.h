@@ -85,6 +85,7 @@ namespace CanIds {
   constexpr uint32_t TIME_SYNC_CMD     = SharedCanId::TIME_SYNC;
   constexpr uint32_t FW_UPDATE_CMD     = BallButlerCanId::FW_UPDATE_CMD;    // host → BB (FwUpdate.h)
   constexpr uint32_t FW_UPDATE_REPLY   = BallButlerCanId::FW_UPDATE_REPLY;  // BB → host
+  constexpr uint32_t YAW_ESTIMATE      = BallButlerCanId::YAW_ESTIMATE;     // BB → bridge, stamped yaw @150 Hz
 }
 
 // ============================================================================

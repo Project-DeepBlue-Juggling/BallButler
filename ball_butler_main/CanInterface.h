@@ -484,6 +484,10 @@ private:
   void maybePublishHeartbeat_();
   void publishHeartbeat_();
 
+  // Stamped yaw estimate (0x7D8): one frame per fresh 150 Hz yaw sample
+  void maybePublishYawEstimate_();
+  uint64_t last_yaw_est_ts_us_ = 0;   // yaw sample timestamp last sent (dedup)
+
   // Ball in hand check
   void maybeCheckBallInHand_();
 

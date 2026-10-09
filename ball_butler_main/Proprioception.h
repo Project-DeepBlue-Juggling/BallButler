@@ -32,6 +32,7 @@ class Stream;
 // --------------------------------------------------------------------
 struct ProprioceptionData {
   float    yaw_deg;        // Yaw angle [degrees]
+  float    yaw_vel_rps;    // Yaw velocity [rev/s] (YawAxis EMA-filtered)
   float    pitch_deg;      // Pitch angle [degrees from horizontal]
   float    hand_pos_rev;   // Hand position [motor revolutions]
   float    hand_vel_rps;   // Hand velocity [rev/s]
@@ -77,6 +78,10 @@ public:
   // ----------------------------------------------------------------
   // Set yaw angle [degrees] with timestamp
   void setYawDeg(float yaw_deg, uint64_t ts_us);
+
+  // Set yaw angle [degrees] AND velocity [rev/s] with timestamp — the YawAxis
+  // ISR callback path (one call per 150 Hz control sample).
+  void setYawPV(float yaw_deg, float yaw_vel_rps, uint64_t ts_us);
   
   // Set pitch angle [degrees from horizontal] with timestamp
   void setPitchDeg(float pitch_deg, uint64_t ts_us);
@@ -113,6 +118,7 @@ public:
   
   // Individual getters (return false if data not valid)
   bool getYaw(float& yaw_deg, uint64_t& ts_us) const;
+  bool getYawPV(float& yaw_deg, float& yaw_vel_rps, uint64_t& ts_us) const;
   bool getPitch(float& pitch_deg, uint64_t& ts_us) const;
   bool getHandPV(float& pos_rev, float& vel_rps, uint64_t& ts_us) const;
   bool getHandIq(float& iq_a, uint64_t& ts_us) const;
@@ -155,6 +161,7 @@ private:
 
   // Data storage (all volatile for ISR safety)
   volatile float    yaw_deg_;
+  volatile float    yaw_vel_rps_;
   volatile float    pitch_deg_;
   volatile float    hand_pos_rev_;
   volatile float    hand_vel_rps_;
