@@ -2,7 +2,7 @@
 title: Full local calibration after BB reinstall — candidate affine for positive s
 type: investigation
 date: 2026-10-09
-status: in-progress
+status: tuned
 related_entries:
   - 2026-10-07-pilot-trajectory-extraction-fix
   - 2026-10-06-local-calibration-analysis
@@ -17,6 +17,16 @@ files_changed:
   - zTesting/throw_testing/accuracy_testing/LOCAL_CALIBRATION.md
   - zTesting/throw_testing/accuracy_testing/local_validation_plan.json
   - zTesting/throw_testing/accuracy_testing/local_validation_plan.html
+external_changes:
+  # The production change lives in the Jugglebot repo, branch bb-positive-s-affine-2026-10-09
+  # (Jugglebot logbook/2026-10-09-bb-positive-s-and-refitted-aim-correction.md and
+  # logbook/2026-10-09-bb-yaw-root-fix.md).
+  - "Jugglebot: config/hardware_config.yaml + regenerated artifacts (ball_butler_geometry.yaw_s_offset_mm -105.65 -> +105.65)"
+  - "Jugglebot: ros_ws/src/jugglebot/resources/throw_affine_correction.json (the 2026-10-09 refit, validated; the 2026-06-09 matrix archived as throw_affine_correction_2026-06-09_negative_s.json)"
+  - "Jugglebot: ros_ws/src/jugglebot/jugglebot/ball_butler_node.py (refuses a matrix fitted for the other sign of s)"
+  - "Jugglebot: ros_ws/src/jugglebot/jugglebot/can/throw_ballistics.py + sim/ball_butler/sim.py (yaw solve always takes the positive-range root)"
+  - "Jugglebot: sim/juggle_catch.py + sim/juggle_bb_catch.py (the BB-feed sims throw from the measured 2026-10-09 placement)"
+  - "Jugglebot: config/generated/admissible_box.yaml (re-swept: hardware_config.py is a gated file)"
 subsystem:
   - calibration
   - throwing
@@ -122,5 +132,63 @@ until a corrected hardware validation run passes; see Outcome.
 
 ## Outcome
 
-Pending: a corrected-throw hardware validation with an independent plan seed, against
-pre-registered criteria, then the production deployment.
+### Validation run (session `20261009T031319_612936Z`, 2026-10-09)
+
+110/110 corrected throws released and accepted (95 cells, 30 core throws, no retries, no
+rejections). Errors in BB-local mm, measured minus desired:
+
+| quantity | value | criterion |
+|---|---|---|
+| mean | (+1.6, −8.2) | within ±6 per axis — **fails on y** |
+| per-throw RMS, grid | 21.0 | ≤26 (predicted 21.8) — passes |
+| per-throw RMS, core | 20.9 | ≤25 (predicted 21.3) — passes |
+| repeat-cell scatter (15 cells) | 14.1 | — |
+
+The verdict against the pre-registered criteria is **FAIL**, on the lateral mean only. The
+correction did what the fit predicted: 54 → 21 mm per throw, which is the repeatability floor.
+
+**Where the lateral mean comes from (instrument first).** The two sessions' BB pose
+calibrations differ:
+
+| pose field | calibration session | validation session |
+|---|---|---|
+| position (mm) | (−975.6, −389.3, 1734.9) | (−976.5, −390.6, 1734.3) |
+| yaw offset | 0.208° (σ 0.07°) | 0.681° (σ 0.04°) |
+| axis tilt | 0.76° | 1.15° |
+
+A +0.47° rotation of the BB-local frame moves a landing at the 0.97 m mean range by −8.0 mm
+in local y: the sign and size of the failing mean. Re-expressed in the calibration session's
+frame the mean is (−2.9, −1.6) mm and the RMS 19.4 mm. The per-throw regression of y error on
+range cannot separate rotation from translation (intercept −5.5 ± 3.9 mm, slope −0.16 ± 0.22°),
+so this is consistent with, not proof of, a frame effect; the direct evidence is the pose
+calibration itself moving by 0.47° while its own quoted σ is 0.04–0.07°. The yaw offset is the
+angle of one anchor marker about the fitted axis point, so an axis-point difference of 1.7 mm
+(as seen here) shifts it by 1.7 mm / r: 0.5° if the anchor sits r ≈ 200 mm from the axis. A second-order hint: the radial error has a
+slope of −17 ± 7 mm per metre of range, i.e. the fitted 1.082 gain reads ~1.065 in this
+session.
+
+**Decision (owner, 2026-10-09): accept the candidate and deploy.** The failing criterion is
+an 8 mm lateral mean of the size the pose calibration itself moves between sessions, which no
+affine fitted in one session can remove; the RMS criteria pass at the predicted floor. This is
+a documented deviation from the pre-registered PASS requirement, not a re-interpretation of
+the criteria: the mean check was written to catch a wrong translation column, and the data say
+the translation is right in the frame it was fitted in.
+
+**Follow-ups, outside this entry's scope:**
+- Per-session yaw-offset repeatability of the BB pose calibration (0.47° here ≈ 8 mm at 1 m).
+  Check the anchor-marker radius and the axis-fit residuals across the two sessions' arcs.
+- The ~48 ms arc-time offset (unchanged).
+
+### Production change
+
+Prepared and gated in the Jugglebot repo (`external_changes` above): s = +105.65, the matrix
+installed with its validation recorded in the resource provenance, the box re-swept, the
+BB-feed sims moved to the measured placement, and the yaw-root fix. Deployment steps
+(merge, build, check the node's `Aim correction source` line, a handful of throws) are in the
+Jugglebot entry.
+
+**Solver sha after the yaw-root fix.** The runner's `--expect-solver-sha bbb80fa5` refers to
+the solver before the fix. The fix changes no command inside the calibrated region (every
+target there takes the forward root), so `run_local_calibration.py` now judges a solver file
+whose sha differs from the candidate's by re-solving the fit session's recorded throws and
+demanding identical solutions, instead of refusing on the sha alone.

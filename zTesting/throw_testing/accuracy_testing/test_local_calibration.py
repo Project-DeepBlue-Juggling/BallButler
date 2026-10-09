@@ -1,5 +1,6 @@
 """Offline calibration contract tests: python -m unittest discover -s this_dir."""
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
@@ -159,6 +160,35 @@ class PlanTests(unittest.TestCase):
             for bad,s in ((dict(signed_s_mm=-105.65),105.65),({},-105.65),(dict(frame='mocap'),105.65)):
                 with self.assertRaises(ValueError):
                     calibration.load_correction(self.candidate(directory,**bad),s)
+
+    def fit_session(self, directory, solver, n=3):
+        throws=[]
+        for i in range(n):
+            x,y,z=1000.+100*i,400.+50*i,-900.
+            sol=solver(x,y,z,yaw_s_offset_mm=105.65)
+            throws.append(dict(throw_idx=i,status='released',target_bb_local_mm=[x,y,z],
+                               solution=dict(yaw_rad=sol.yaw_rad,pitch_rad=sol.pitch_rad,speed_mps=sol.speed_mps,tof_s=sol.tof_s)))
+        throws.append(dict(throw_idx=n,status='aborted',target_bb_local_mm=[1.,1.,1.]))   # never compared
+        path=Path(directory)/'session.json'; path.write_text(json.dumps(dict(throws=throws)))
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def test_a_different_solver_file_is_accepted_only_if_it_reproduces_the_fit_solutions(self):
+        # The sha guard alone would refuse the 2026-10-09 yaw-root fix, which
+        # changes no command in the calibrated region; judge behaviour instead.
+        def solver(x,y,z,yaw_s_offset_mm): return SimpleNamespace(yaw_rad=x/1e4,pitch_rad=y/1e4,speed_mps=3.,tof_s=.9)
+        def other(x,y,z,yaw_s_offset_mm): return SimpleNamespace(yaw_rad=x/1e4+1e-6,pitch_rad=y/1e4,speed_mps=3.,tof_s=.9)
+        with tempfile.TemporaryDirectory() as directory:
+            sha=self.fit_session(directory,solver)
+            analysis=Path(directory)/'analysis'; analysis.mkdir()
+            correction=calibration.load_correction(self.candidate(analysis,session_sha256=sha),105.65)
+            self.assertEqual(calibration.solver_reproduces_fit(correction,solver,105.65),3)
+            with self.assertRaisesRegex(RuntimeError,'differs'):
+                calibration.solver_reproduces_fit(correction,other,105.65)
+            stale=calibration.load_correction(self.candidate(analysis,session_sha256='0'*64),105.65)
+            with self.assertRaisesRegex(RuntimeError,'changed'):
+                calibration.solver_reproduces_fit(stale,solver,105.65)
+            with self.assertRaisesRegex(RuntimeError,'missing'):
+                calibration.solver_reproduces_fit(calibration.load_correction(self.candidate(directory,session_sha256=sha),105.65),solver,105.65)
 
     def test_validation_schedule_commands_corrected_point_keeps_desired_target(self):
         with tempfile.TemporaryDirectory() as directory:

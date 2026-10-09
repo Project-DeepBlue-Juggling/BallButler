@@ -80,6 +80,15 @@ same interface, different commands (279 vs 277 feasible, up to 0.5° pitch).
 The wrong one fails silently and the fitted correction then belongs to the
 wrong solver. The runner prints `Solver: <path> (sha256 …)`; check it in
 `--check-only` and pass its prefix as `--expect-solver-sha` on real runs.
+
+Solver files seen so far: `3b4695b4…` (`~/Desktop/Jugglebot`), `bbb80fa5…`
+(`Jugglebot-skills` until 2026-10-09; the 2026-10-09 candidate was fitted with
+it) and `cb09095e…` (after the 2026-10-09 yaw-root fix, Jugglebot
+`logbook/2026-10-09-bb-yaw-root-fix.md`). The last two give identical commands
+for every target in front of the yaw-axis plane, which covers the whole
+calibrated region: re-solving all 277 recorded calibration throws and the 110
+validation commands with `cb09095e…` reproduced every solution exactly. The
+examples below use `cb09095e`; pass `bbb80fa5` on a stack built before the fix.
 Start the normal stack, calibrate BB's pose, and load the hopper. This runner
 starts its own focused recorder; normal launch recording may stay on, but
 `record:=false` avoids duplicate bag I/O. Whether the normal launch enables
@@ -114,7 +123,7 @@ the old affine does not affect this script's direct corrected-geometry path.
 
    ```bash
    python run_local_calibration.py run local_calibration_plan.json \
-       --schedule-to-mocap DX DY --expect-solver-sha bbb80fa5 --limit 10
+       --schedule-to-mocap DX DY --expect-solver-sha cb09095e --limit 10
    ```
 
    This selects the first ten **reachable entries in the randomized schedule**,
@@ -132,7 +141,7 @@ the old affine does not affect this script's direct corrected-geometry path.
 
    ```bash
    python run_local_calibration.py run local_calibration_plan.json \
-       --schedule-to-mocap DX DY --expect-solver-sha bbb80fa5 \
+       --schedule-to-mocap DX DY --expect-solver-sha cb09095e \
        --resume-from ~/bb_calibration_sessions/<part1>/session.json
    ```
 
@@ -346,7 +355,11 @@ would) and solves the commanded point with the same positive s. `target_*`
 fields stay the **desired** landing point and `command_bb_local_mm` records
 what was solved. Targets outside the region the candidate was fitted on are
 skipped, never extrapolated. The runner refuses a candidate fitted with a
-different s, frame or solver sha.
+different s or frame. A solver file whose sha differs from the candidate's is
+accepted only if it reproduces every recorded solution of the session the
+candidate was fitted from (`solver_reproduces_fit`: the session must sit beside
+the candidate, `<session>/analysis/<candidate>`, and still hash to the
+candidate's `session_sha256`); otherwise the run is refused.
 
 `local_validation_plan.json` (seed 1042) is shifted half a grid step
 (+25, +25 mm) from the calibration grid. Every target is therefore a position
@@ -357,7 +370,7 @@ the fit never saw. Each cell is thrown once and the dense core twice. With the
 ```bash
 source ~/Desktop/Jugglebot-skills/ros_ws/install/setup.zsh
 python run_local_calibration.py run local_validation_plan.json --schedule-to-mocap 0.3 -0.6 \
-    --expect-solver-sha bbb80fa5 \
+    --expect-solver-sha cb09095e \
     --apply-correction ~/bb_calibration_sessions/20261009T002142_931068Z/analysis/correction_candidate.json \
     --check-only        # then repeat without --check-only, QTM continuous capture running
 ~/Desktop/PDJ_venv/venv/bin/python analyze_local_calibration.py \
@@ -380,6 +393,12 @@ BB-local mm, measured minus desired.
 Only a `PASS` justifies deploying the candidate (positive s + this matrix,
 replacing the old affine). On a `FAIL`, do not deploy; keep the session for
 diagnosis.
+
+The 2026-10-09 run of this procedure (session `20261009T031319_612936Z`, 110/110
+throws, RMS 21.0 / 20.9 mm, mean (+1.6, −8.2) mm) is recorded in
+`logbook/2026-10-09-bb-local-calibration-result.md`: FAIL on the lateral mean
+alone, accepted by the owner for the reason given there (the two sessions' pose
+calibrations differ by 0.47° in yaw offset).
 
 ## Hardware pilot, 2026-10-07
 

@@ -204,6 +204,42 @@ def apply_correction(matrix, x, y):
     return a*x + b*y + tx, c*x + d*y + ty
 
 
+def solver_reproduces_fit(correction, solver, signed_s, tolerance=1e-9):
+    """Judge the installed solver against the fit session's RECORDED solutions.
+
+    The sha guard (provenance solver_sha256) is blunt: any edit to
+    throw_ballistics.py changes it, including one that leaves every command in
+    the calibrated region untouched (the 2026-10-09 yaw-root fix). The direct
+    check is behavioural: re-solve every released throw of the session the
+    candidate was fitted from and demand the recorded yaw/pitch/speed/tof back.
+    The session is found beside the candidate (<session>/analysis/<candidate>)
+    and must still hash to the candidate's session_sha256.
+    Returns the number of throws compared; raises RuntimeError otherwise.
+    """
+    session_path = Path(correction['path']).parent.parent / 'session.json'
+    expected = correction['provenance'].get('session_sha256')
+    if not expected or not session_path.is_file():
+        raise RuntimeError('Cannot judge the installed solver against the fit session: %s missing, or the '
+                           'candidate records no session_sha256' % session_path)
+    raw = session_path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected:
+        raise RuntimeError('Fit session %s has changed since the candidate was fitted' % session_path)
+    compared = 0
+    for throw in json.loads(raw.decode('utf-8'))['throws']:
+        if throw.get('status') != 'released' or 'solution' not in throw:
+            continue
+        x, y, z = throw.get('command_bb_local_mm') or throw['target_bb_local_mm']
+        solution = solver(x, y, z, yaw_s_offset_mm=signed_s)
+        for key in ('yaw_rad', 'pitch_rad', 'speed_mps', 'tof_s'):
+            if not abs(getattr(solution, key) - throw['solution'][key]) <= tolerance:
+                raise RuntimeError('Installed solver differs from the candidate\'s: throw %s %s %r, recorded %r'
+                                   % (throw.get('throw_idx'), key, getattr(solution, key), throw['solution'][key]))
+        compared += 1
+    if not compared:
+        raise RuntimeError('Fit session %s has no released throws to compare' % session_path)
+    return compared
+
+
 def completed_throws(previous, plan_sha256, signed_s, schedule_to_mocap, solver_sha256=None,
                      correction_sha256=None):
     """throw_idx values already released AND cleanly captured in earlier sessions.
@@ -559,8 +595,11 @@ def run(args):
                                'source the workspace the live stack runs'%(session['solver_sha256'][:16],args.expect_solver_sha))
         session['hardware_constants']={k:v for k,v in vars(hw).items() if k.startswith('BB_') and isinstance(v,(str,int,float,bool))}
         if correction and correction['solver_sha256'] and correction['solver_sha256']!=session['solver_sha256']:
-            raise RuntimeError('Correction was fitted with solver %s, installed solver is %s'
-                               %(correction['solver_sha256'][:8],session['solver_sha256'][:8]))
+            # A different file is accepted only if it reproduces every recorded fit solution.
+            compared=solver_reproduces_fit(correction,solve_throw_local,args.s)
+            session['solver_equivalence']=dict(candidate_solver_sha256=correction['solver_sha256'],throws_compared=compared)
+            print('Installed solver sha256 %s differs from the candidate\'s %s but reproduces all %d recorded fit '
+                  'solutions; accepted'%(session['solver_sha256'][:8],correction['solver_sha256'][:8],compared),flush=True)
         if correction:
             print('VALIDATION RUN: applying %s (sha256 %s); targets are desired landing points'
                   %(correction['path'],correction['sha256'][:8]),flush=True)
