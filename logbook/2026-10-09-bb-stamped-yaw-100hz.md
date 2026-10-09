@@ -6,6 +6,8 @@ status: in-progress
 related_entries:
   - 2026-10-09-bb-local-calibration-result
 files_changed:
+  - ball_butler_main/platformio.ini
+  - ball_butler_main/scripts/bb_link_check.py
   - ball_butler_main/CanInterface.cpp
   - ball_butler_main/CanInterface.h
   - ball_butler_main/Proprioception.cpp
@@ -116,5 +118,19 @@ USB recovery stays `pio run -e teensy40` + `/home/jetson/bin/teensy_loader_cli -
   `~/Desktop/PDJ_venv/venv/bin/python ~/Desktop/Jugglebot-skills/tools/teensy_link_bridge.py --fw-update .pio/build/teensy40_can/firmware.hex --target bb`
   after `pio run -e teensy40_can` had built the hex. Either point the ini at the checkout
   the live stack runs, or bring `~/Desktop/Jugglebot` up to date before the next CAN flash.
-- **Can-bridge flash (FW 27 → 28) still pending**; until then BB's 0x7D8 frames are dropped
-  harmlessly and `/bb/axis_estimates` keeps its two joints.
+- **Can-bridge flashed 2026-10-10 00:01 over USB** from Jugglebot-skills `skill-stack`
+  `02abfe49` (`pio run -e teensy41`, 284 672 B; waiting `teensy_loader_cli --mcu=TEENSY41 -w -v`,
+  then a 134-baud touch of the hub's by-id port only; the cone was not on USB). The bridge
+  came back reporting **FW_VERSION 28** in its `BRIDGE_IDENTITY` uplink, `BB_AXIS_ESTIMATES`
+  still at 100 Hz, link UP. Checked on the raw UDP link with
+  `ball_butler_main/scripts/bb_link_check.py` (no ROS needed).
+- **BB-side check not possible yet.** At the time of the flash the Ball Butler CAN bus was
+  silent (bridge profile wire slot 2: 0 frames/s in either direction, bus health 0; BB's
+  ODrives silent too), i.e. BB was powered down after the 23:49 sitting, so no `0x7D8` frames
+  and no `BB_YAW_ESTIMATE` (0x93) could be observed. Rerun `bb_link_check.py` with BB on: it
+  prints the 0x93 rate (expect ~100 Hz while fresh), the `yaw_age_us` distribution and the
+  stamp pairing with `BB_AXIS_ESTIMATES`. Then the ROS topic check above. Status stays
+  `in-progress` until then.
+- **Pitfall fixed.** `platformio.ini`'s `upload_command` (and the header's rehearsal line)
+  now point at `../../Jugglebot-skills/tools/teensy_link_bridge.py`, the checkout the live
+  bridge was flashed from; the header says why.
