@@ -124,6 +124,10 @@ USB recovery stays `pio run -e teensy40` + `/home/jetson/bin/teensy_loader_cli -
   came back reporting **FW_VERSION 28** in its `BRIDGE_IDENTITY` uplink, `BB_AXIS_ESTIMATES`
   still at 100 Hz, link UP. Checked on the raw UDP link with
   `ball_butler_main/scripts/bb_link_check.py` (no ROS needed).
+- **BB FW 6 does transmit 0x7D8, from the bags' bridge profile counters** (wire slot 2 = the
+  BB bus, `can2_rx`): median 307 frames/s in the 18:56 bag (BB FW 5) against 457 frames/s
+  in the 23:49 bag (BB FW 6, bridge still FW 27), i.e. +150 frames/s, the YawAxis sample
+  rate. The FW 27 bridge dropped them as designed.
 - **BB-side check not possible yet.** At the time of the flash the Ball Butler CAN bus was
   silent (bridge profile wire slot 2: 0 frames/s in either direction, bus health 0; BB's
   ODrives silent too), i.e. BB was powered down after the 23:49 sitting, so no `0x7D8` frames
