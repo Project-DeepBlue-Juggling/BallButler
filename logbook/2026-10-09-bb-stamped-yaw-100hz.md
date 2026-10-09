@@ -99,3 +99,22 @@ USB recovery stays `pio run -e teensy40` + `/home/jetson/bin/teensy_loader_cli -
 
 - The hardware check above, then `resolved`.
 - Switch the pose-calibration fit (Jugglebot `mocap_node`) from heartbeat yaw to `bb_yaw`, keeping the lag fit as a check. Measure `yaw_age_us` (expected mean ≈ 4 ms, an inference from the rates).
+
+## Flash record
+
+- **BB flashed 2026-10-09 23:44–23:45 over CAN** from `main` `c99ce96`: 163 840 B in 25.3 s
+  (pipeline depth 4, 0 rewinds, 0 retries, 0 missing acks), VERIFY OK crc32 0xE19F97E4,
+  COMMIT OK, reboot, **FW version 5 → 6**. Log: the session's `.bb_flash_20261009.log`
+  under `zTesting/throw_testing/accuracy_testing/` (gitignored).
+- **Pitfall found on the first attempt.** `platformio.ini`'s `upload_command` runs
+  `../../Jugglebot/tools/teensy_link_bridge.py`, and that checkout
+  (`mvp-trajectory-bringup`, `e9b75331`) still carries `PROTOCOL_VERSION = 6` and expects
+  can-bridge FW 22, while the live bridge is FW 27 on protocol 9. The old client saw the
+  bridge's RPC packets but no parseable `HEARTBEAT_T2J` and aborted with "link down?"
+  before touching BB (the bridge was streaming ~370 packets/s on 5005 throughout). The
+  flash went through with the live checkout's tool:
+  `~/Desktop/PDJ_venv/venv/bin/python ~/Desktop/Jugglebot-skills/tools/teensy_link_bridge.py --fw-update .pio/build/teensy40_can/firmware.hex --target bb`
+  after `pio run -e teensy40_can` had built the hex. Either point the ini at the checkout
+  the live stack runs, or bring `~/Desktop/Jugglebot` up to date before the next CAN flash.
+- **Can-bridge flash (FW 27 → 28) still pending**; until then BB's 0x7D8 frames are dropped
+  harmlessly and `/bb/axis_estimates` keeps its two joints.
