@@ -469,3 +469,25 @@ Live DDS/action/recorder integration still needs the Jetson pilot.
 The comparison plot is now available as `mirrored_hand_comparison.png`.
 `render_mirrored_comparison.py` regenerates PNG and UTF-8 SVG using Pillow;
 the earlier Windows-encoded SVG was invalid XML and had clipped plot bounds.
+
+## Settling the yaw-offset gauge (the "item 2" sitting)
+
+The mocap pose calibration's constellation estimator (Jugglebot branch
+`bb-constellation-yaw-2026-10-09`) reports the yaw offset in the frame the
+deployed affine was fitted in, session A's (0.208°), through a gauge pinned from
+recorded data with about ±0.2° of uncertainty. The throws settle it: a yaw-offset
+error e turns every landing's bearing about BB's yaw axis by −e in the frame the
+node used (session B: used 0.681°, frame 0.208°, mean bearing −0.50 ± 0.05°).
+
+`run_item2_sitting.sh [N]` (default 40 corrected throws from
+`local_validation_plan.json`, solver `cb09095e`) runs the preflight, the throws,
+the extraction and then `settle_yaw_gauge.py`, whose rule was fixed before the
+sitting: with ≥30 accepted throws, |mean bearing error| ≤ 0.15° confirms the
+frame (`FRAME_CONFIRMED`); otherwise `RE_PIN`, and the printed delta is added to
+`gauge.pinned_yaw_offset_deg` in Jugglebot
+`ros_ws/src/jugglebot/resources/bb_marker_template.json`, the workspace rebuilt
+and the sweep re-run. The affine's own RMS checks are reported alongside; a refit
+is needed only if they fail after the re-pin. Re-running the script on session B
+reproduces the known error: implied frame 0.184° against the 0.208° it was fitted
+in. The result is written to `<session>/analysis/yaw_gauge_settlement.json`.
+
