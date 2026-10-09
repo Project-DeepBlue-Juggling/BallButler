@@ -104,7 +104,6 @@ namespace SharedCanId {
 
 // Platform Teensy <-> Host
 namespace PlatformCanId {
-  constexpr uint32_t TRAJ_CMD = 0x6D0;
   constexpr uint32_t STATE_UPDATE = 0x6E0;
   constexpr uint32_t TILT_READING = 0x7DE;
   constexpr uint32_t TRAFFIC_REPORT = 0x7DF;
@@ -122,6 +121,7 @@ namespace BallButlerCanId {
   constexpr uint32_t CMD_RESULT = 0x7D5;
   constexpr uint32_t FW_UPDATE_CMD = 0x7D6;
   constexpr uint32_t FW_UPDATE_REPLY = 0x7D7;
+  constexpr uint32_t YAW_ESTIMATE = 0x7D8;
 }
 
 // Catching Cone Teensy <-> Host
@@ -210,10 +210,15 @@ namespace HeartbeatEncoding {
   constexpr float hand_res_mm = 0.01f;
 }
 
+// Ball Butler YAW_ESTIMATE CAN frame encoding (stamped 100 Hz yaw)
+namespace YawEstimateEncoding {
+  constexpr float vel_res_dps = 0.1f;
+}
+
 // ODrive input scaling (vel_ff and torque_ff are sent as int16 * scale)
 namespace InputScale {
   constexpr float hand_vel = 100.0f;
-  constexpr float hand_tor = 100.0f;
+  constexpr float hand_tor = 1000.0f;
   constexpr float leg_vel = 1000.0f;
   constexpr float leg_tor = 10000.0f;
 }
@@ -234,6 +239,7 @@ namespace SDO {
 namespace EndpointId {
   namespace odrive_pro_0_6_11 {
     constexpr uint16_t get_gpio_states = 726;
+    constexpr uint16_t can_input_torque_scale = 283;
   }
   namespace odrive_s1_0_6_11 {
     constexpr uint16_t get_gpio_states = 700;

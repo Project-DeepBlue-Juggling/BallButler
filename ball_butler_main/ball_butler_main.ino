@@ -42,9 +42,9 @@ static uint32_t yaw_last_stream_ms = 0;
 // YAW PROPRIOCEPTION CALLBACK (called from ISR)
 // ============================================================================
 void yawProprioceptionCallback(float pos_deg, float vel_rps, uint64_t ts_us) {
-  PRO.setYawDeg(pos_deg, ts_us);
-  // vel_rps intentionally discarded — no current consumer. Store it if
-  // yaw velocity is ever needed (e.g., tracking feedforward, diagnostics).
+  // Velocity is kept for the YAW_ESTIMATE CAN frame (0x7D8, CanInterface::
+  // maybePublishYawEstimate_) — the stamped 100 Hz yaw on /bb/axis_estimates.
+  PRO.setYawPV(pos_deg, vel_rps, ts_us);
 }
 
 // ============================================================================
