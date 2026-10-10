@@ -87,7 +87,10 @@ def settle(session, rows, report=None, tolerance_deg=BEARING_TOLERANCE_DEG, min_
     if report and report.get('validation'):
         v = report['validation']
         out['affine_rms_mm'] = v.get('rms_mm')
-        out['affine_rms_ok'] = bool(v['checks'].get('rms')) and bool(v['checks'].get('core_rms', True))
+        # An INCONCLUSIVE validation (too few accepted throws) carries no 'checks'.
+        checks = v.get('checks') or {}
+        out['affine_rms_ok'] = bool(checks.get('rms')) and bool(checks.get('core_rms', True))
+        out['affine_verdict'] = v.get('verdict')
     out['verdict'] = 'FRAME_CONFIRMED' if abs(mean_b) <= tolerance_deg else 'RE_PIN'
     return out
 
