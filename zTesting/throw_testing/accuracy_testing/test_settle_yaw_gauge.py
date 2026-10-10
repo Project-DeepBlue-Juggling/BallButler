@@ -62,6 +62,37 @@ class SettleTests(unittest.TestCase):
             out = json.loads((Path(d) / 'analysis' / 'yaw_gauge_settlement.json').read_text())
             self.assertEqual(out['verdict'], 'RE_PIN'); self.assertTrue(out['affine_rms_ok'])
 
+    def test_inconclusive_report_has_its_affine_criteria_evaluated_here(self):
+        # 2026-10-10 23:34 sitting: 47 accepted < the report's 60, so its validation
+        # is INCONCLUSIVE with no 'checks'; RMS 24.6 is inside 26 and there are no core throws.
+        crit = dict(max_abs_mean_mm=6.0, max_rms_mm=26.0, max_core_rms_mm=25.0,
+                    min_accepted=60, min_core_accepted=10, min_accepted_fraction=0.9)
+        session, accepted = synthetic(0.3)
+        rows = settle.bearing_rows(accepted, POSE)
+        report = dict(validation=dict(criteria=crit, n=47, n_core=0, mean_mm=[-8.1, -8.7], rms_mm=24.6,
+                                      core_rms_mm=None, verdict='INCONCLUSIVE'))
+        result = settle.settle(session, rows, report)
+        self.assertTrue(result['affine_rms_ok'])
+        self.assertEqual(result['affine_checks'], dict(rms=True, core_rms=True, mean=False))
+        text = '\n'.join(settle.describe(result))
+        self.assertIn('within criteria (RMS 24.6 <= 26, core n/a', text)
+        self.assertNotIn('OUTSIDE criteria', text)
+        self.assertIn('mean landing error (-8.1, -8.7) mm: OUTSIDE', text)
+        # Above the RMS criterion, or a core RMS above its own, it is OUTSIDE.
+        report['validation'].update(rms_mm=27.0)
+        result = settle.settle(session, rows, report)
+        self.assertFalse(result['affine_rms_ok'])
+        self.assertIn('OUTSIDE criteria', '\n'.join(settle.describe(result)))
+        report['validation'].update(rms_mm=24.6, core_rms_mm=25.5)
+        self.assertFalse(settle.settle(session, rows, report)['affine_rms_ok'])
+        # The report's own checks win when present; nothing to judge without criteria or RMS.
+        report['validation'].update(checks=dict(mean=True, rms=True, core_rms=True))
+        result = settle.settle(session, rows, report)
+        self.assertTrue(result['affine_rms_ok']); self.assertEqual(result['affine_checks_source'], 'report')
+        result = settle.settle(session, rows, dict(validation=dict(verdict='INCONCLUSIVE', rms_mm=None)))
+        self.assertIsNone(result['affine_rms_ok'])
+        self.assertIn('not evaluated', '\n'.join(settle.describe(result)))
+
     @unittest.skipUnless(SESSION_B.is_file() and (SESSION_B.parent / 'analysis' / 'extraction.json').is_file(),
                          'session B data not on this machine')
     def test_session_b_real_data_recovers_the_known_frame_error(self):
