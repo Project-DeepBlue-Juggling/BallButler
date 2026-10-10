@@ -14,7 +14,8 @@ moves by  +mean_bearing_error.
 Pre-registered rule (2026-10-09, before the sitting): with at least MIN_ACCEPTED
 accepted corrected throws, |mean bearing error| <= BEARING_TOLERANCE_DEG confirms
 the frame; otherwise re-pin by the mean. The RMS checks of extraction_report.json
-say separately whether the affine itself still holds; a RE_PIN never needs a refit
+say separately whether the affine itself still holds
+(evaluated here from its criteria when an INCONCLUSIVE report carries none); a RE_PIN never needs a refit
 unless those fail after the re-pin.
 
 Usage (after analyze_local_calibration.py <session>/session.json --extract-only):
@@ -61,6 +62,31 @@ def bearing_rows(accepted, pose):
     return rows
 
 
+def affine_checks(validation):
+    """(checks, source) for the affine's pre-registered criteria
+    (analyze_local_calibration.VALIDATION_CRITERIA). The report's own 'checks'
+    when present; an INCONCLUSIVE validation (too few accepted throws for a
+    verdict) carries none, so they are evaluated here from its 'criteria' and the
+    measured mean / RMS / core RMS. A null core RMS (no core throws in the plan)
+    is not applicable and passes, as analyze_local_calibration would not judge it.
+    (None, reason) when neither is available. These say whether the RMS sits
+    inside the criteria; they are not a validation verdict, which also needs the
+    counts."""
+    checks = validation.get('checks')
+    if checks:
+        return dict(mean=checks.get('mean'), rms=bool(checks.get('rms')),
+                    core_rms=bool(checks.get('core_rms', True))), 'report'
+    crit = validation.get('criteria') or {}
+    rms, core, mean = validation.get('rms_mm'), validation.get('core_rms_mm'), validation.get('mean_mm')
+    if rms is None or 'max_rms_mm' not in crit:
+        return None, 'no checks and no criteria/RMS in the report'
+    out = dict(rms=rms <= crit['max_rms_mm'],
+               core_rms=True if core is None or 'max_core_rms_mm' not in crit else core <= crit['max_core_rms_mm'],
+               mean=None if mean is None or 'max_abs_mean_mm' not in crit
+               else all(abs(m) <= crit['max_abs_mean_mm'] for m in mean))
+    return out, 'computed from criteria (report verdict %s)' % validation.get('verdict')
+
+
 def settle(session, rows, report=None, tolerance_deg=BEARING_TOLERANCE_DEG, min_accepted=MIN_ACCEPTED):
     if not session.get('correction'):
         raise ValueError('Not a corrected session: the uncorrected aim bias would be read as a frame error')
@@ -73,10 +99,12 @@ def settle(session, rows, report=None, tolerance_deg=BEARING_TOLERANCE_DEG, min_
     n = len(rows)
     b = np.array([r['bearing_deg'] for r in rows])
     lat = np.array([r['lateral_mm'] for r in rows])
+    rad = np.array([r['radial_mm'] for r in rows])
     rng = np.array([r['range_mm'] for r in rows])
     mean_b = float(b.mean())
     out.update(bearing_mean_deg=mean_b, bearing_se_deg=float(b.std(ddof=1) / math.sqrt(n)),
                lateral_mean_mm=float(lat.mean()), lateral_se_mm=float(lat.std(ddof=1) / math.sqrt(n)),
+               radial_mean_mm=float(rad.mean()), radial_se_mm=float(rad.std(ddof=1) / math.sqrt(n)),
                mean_range_mm=float(rng.mean()))
     # Rotation (slope in range) against translation (intercept): a frame error is pure slope.
     A = np.c_[rng, np.ones(n)]
@@ -90,9 +118,13 @@ def settle(session, rows, report=None, tolerance_deg=BEARING_TOLERANCE_DEG, min_
     if report and report.get('validation'):
         v = report['validation']
         out['affine_rms_mm'] = v.get('rms_mm')
-        # An INCONCLUSIVE validation (too few accepted throws) carries no 'checks'.
-        checks = v.get('checks') or {}
-        out['affine_rms_ok'] = bool(checks.get('rms')) and bool(checks.get('core_rms', True))
+        out['affine_core_rms_mm'] = v.get('core_rms_mm')
+        out['affine_mean_mm'] = v.get('mean_mm')
+        out['affine_criteria'] = v.get('criteria')
+        checks, source = affine_checks(v)
+        out['affine_checks'] = checks
+        out['affine_checks_source'] = source
+        out['affine_rms_ok'] = None if checks is None else (bool(checks['rms']) and bool(checks['core_rms']))
         out['affine_verdict'] = v.get('verdict')
     out['verdict'] = 'FRAME_CONFIRMED' if abs(mean_b) <= tolerance_deg else 'RE_PIN'
     return out
@@ -118,10 +150,34 @@ def describe(result):
     else:
         lines += ['  no re-pin needed']
     if 'affine_rms_ok' in result:
-        lines += ['  affine per-throw RMS %.1f mm: %s' % (result['affine_rms_mm'], 'within criteria' if result['affine_rms_ok']
-                  else 'OUTSIDE criteria: if it stays outside after the re-pin, refit the affine')]
+        lines += affine_lines(result)
     return lines
 
+
+def affine_lines(result):
+    """The affine's RMS line (and the mean line when its check fails), naming the
+    numbers against the criteria so an INCONCLUSIVE report is not misread."""
+    if result['affine_rms_ok'] is None:
+        return ['  affine RMS: not evaluated (%s)' % result['affine_checks_source']]
+    c, crit = result['affine_checks'], result.get('affine_criteria') or {}
+    rms, core = result['affine_rms_mm'], result.get('affine_core_rms_mm')
+    detail = 'RMS %.1f' % rms
+    if 'max_rms_mm' in crit:
+        detail += (' <= %g' if c['rms'] else ' > %g') % crit['max_rms_mm']
+    detail += ', core n/a' if core is None else ', core %.1f' % core
+    if core is not None and 'max_core_rms_mm' in crit:
+        detail += (' <= %g' if c['core_rms'] else ' > %g') % crit['max_core_rms_mm']
+    verdict = ('within criteria' if result['affine_rms_ok']
+               else 'OUTSIDE criteria: if it stays outside after the re-pin, refit the affine')
+    src = '' if result['affine_checks_source'] == 'report' else '; %s' % result['affine_checks_source']
+    lines = ['  affine per-throw RMS %.1f mm: %s (%s%s)' % (rms, verdict, detail, src)]
+    mean = result.get('affine_mean_mm')
+    if c.get('mean') is False and mean is not None:
+        lines += ['  affine mean landing error (%+.1f, %+.1f) mm: OUTSIDE |mean| <= %g mm per axis '
+                  '(radial %+.1f +- %.1f mm, lateral %+.1f mm: a re-pin moves only the lateral part)'
+                  % (mean[0], mean[1], crit.get('max_abs_mean_mm'), result['radial_mean_mm'],
+                     result['radial_se_mm'], result['lateral_mean_mm'])]
+    return lines
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
