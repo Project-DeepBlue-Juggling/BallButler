@@ -24,6 +24,13 @@ class StateMachine;
  *    match that drive's axis0.config.can.input_vel_scale /
  *    input_torque_scale (a mismatch is a silent torque/velocity error:
  *    FW 6 borrowed hand_tor = 1000 for a drive set to 100, a 10x torque FF).
+ *  - FW 8 hand input-scale guard: every CLOSED_LOOP request to the hand node
+ *    starts an async SDO READ of that drive's input_torque_scale /
+ *    input_vel_scale (+ node_id and fw version, log only). A reply that
+ *    differs from bb_hand_tor / bb_hand_vel latches "feedforward disabled"
+ *    for the node (sendInputPos then sends vel_ff = tor_ff = 0) until a check
+ *    in which both scales match. No reply leaves the latch as it was. USB
+ *    serial only: no BB->host frame has a field for it.
  */
 
 // CAN IDs live in BallButlerConfig.h (namespace CanIds)
@@ -99,6 +106,21 @@ public:
   struct EndpointIds {
     static constexpr uint16_t COMMUTATION_MAPPER_POS_ABS = EndpointId::odrive_s1_0_6_11::commutation_mapper_pos_abs;
     static constexpr uint16_t GPIO_STATES                = EndpointId::odrive_s1_0_6_11::get_gpio_states;
+    // FW 8 hand input-scale guard (read with OPCODE_READ, never written)
+    static constexpr uint16_t CAN_INPUT_TORQUE_SCALE     = EndpointId::odrive_s1_0_6_11::can_input_torque_scale;
+    static constexpr uint16_t CAN_INPUT_VEL_SCALE        = EndpointId::odrive_s1_0_6_11::can_input_vel_scale;
+    static constexpr uint16_t CAN_NODE_ID                = EndpointId::odrive_s1_0_6_11::can_node_id;
+    static constexpr uint16_t FW_VERSION_MAJOR           = EndpointId::odrive_s1_0_6_11::fw_version_major;
+    static constexpr uint16_t FW_VERSION_MINOR           = EndpointId::odrive_s1_0_6_11::fw_version_minor;
+    static constexpr uint16_t FW_VERSION_REVISION        = EndpointId::odrive_s1_0_6_11::fw_version_revision;
+  };
+
+  // FW 8 hand input-scale guard: outcome of the last completed check.
+  enum class ScaleGuardVerdict : uint8_t {
+    UNKNOWN  = 0,   // no check completed yet (boot)
+    MATCH    = 1,   // both scales read back equal to bb_hand_tor / bb_hand_vel
+    MISMATCH = 2,   // at least one scale read back different: FF zeroed
+    NO_REPLY = 3,   // a scale did not answer in time: latch left as it was
   };
 
   struct ArbitraryParamResponse {
@@ -211,7 +233,12 @@ public:
 
   bool sendArbitraryParameterFloat(uint32_t node_id, uint16_t endpoint_id, float value);
   bool sendArbitraryParameterU32(uint32_t node_id, uint16_t endpoint_id, uint32_t value);
+  /// FUNCTION-INVOKE idiom (OPCODE_WRITE, zero payload) — for function
+  /// endpoints such as get_gpio_states ONLY. On a property it WRITES 0 to it.
+  /// To read a property use requestArbitraryParameterRead().
   bool requestArbitraryParameter(uint32_t node_id, uint16_t endpoint_id);
+  /// SDO READ (OPCODE_READ): the drive answers with a TxSdo carrying the value.
+  bool requestArbitraryParameterRead(uint32_t node_id, uint16_t endpoint_id);
   bool getLastArbitraryParamResponse(uint32_t node_id, ArbitraryParamResponse& out) const;
   void setArbitraryParamCallback(ArbitraryParamCallback cb, void* user = nullptr);
   /// BLOCKING — only call during setup(), never from loop() or update().
@@ -236,6 +263,12 @@ public:
   /// BLOCKING — only call during setup(), never from loop() or update().
   bool waitForAxisErrorClear(uint32_t node_id, uint32_t mask, uint32_t timeout_ms, uint16_t poll_ms = 5);
   bool isBallInHand() const { return ball_in_hand_; }
+
+  // FW 8 hand input-scale guard (see the header comment)
+  bool isFeedforwardDisabled(uint32_t node_id) const {
+    return node_id < MAX_NODES && ff_disabled_[node_id];
+  }
+  ScaleGuardVerdict handScaleVerdict() const { return scale_guard_verdict_; }
 
   // ============================================================================
   // Homing
@@ -363,6 +396,11 @@ private:
   static constexpr float kHandTorScale_  = InputScale::bb_hand_tor;
   static constexpr float kPitchVelScale_ = InputScale::bb_pitch_vel;
   static constexpr float kPitchTorScale_ = InputScale::bb_pitch_tor;
+  // The drive stores the scales as uint32: the expected values must be whole.
+  static constexpr uint32_t kHandVelScaleU32_ = (uint32_t)InputScale::bb_hand_vel;
+  static constexpr uint32_t kHandTorScaleU32_ = (uint32_t)InputScale::bb_hand_tor;
+  static_assert((float)kHandVelScaleU32_ == InputScale::bb_hand_vel, "bb_hand_vel must be a whole number");
+  static_assert((float)kHandTorScaleU32_ == InputScale::bb_hand_tor, "bb_hand_tor must be a whole number");
 
   // ============================================================================
   // Static Members
@@ -437,6 +475,25 @@ private:
   void* arb_param_cb_user_ = nullptr;
 
   // ============================================================================
+  // FW 8 hand input-scale guard (bounded, non-blocking; runs from loop())
+  // ============================================================================
+  // One read in flight at a time, in kScaleGuardEndpoints_ order (scales first).
+  static constexpr uint8_t  SCALE_GUARD_READS_          = 6;
+  static constexpr uint32_t SCALE_GUARD_READ_TIMEOUT_MS = 50;    // per read
+  static constexpr uint32_t SCALE_GUARD_TOTAL_MS        = 250;   // whole check
+  static const uint16_t kScaleGuardEndpoints_[SCALE_GUARD_READS_];
+  enum class ScaleGuardPhase : uint8_t { IDLE, SEND, WAIT };
+  ScaleGuardPhase scale_guard_phase_ = ScaleGuardPhase::IDLE;
+  bool     scale_guard_requested_ = false;   // set by a hand CLOSED_LOOP request
+  uint8_t  scale_guard_idx_       = 0;       // read being sent / awaited
+  uint32_t scale_guard_start_ms_  = 0;
+  uint32_t scale_guard_sent_ms_   = 0;
+  uint8_t  scale_guard_got_mask_  = 0;       // bit i: reply to endpoint i received
+  uint32_t scale_guard_val_[SCALE_GUARD_READS_] = {};
+  ScaleGuardVerdict scale_guard_verdict_ = ScaleGuardVerdict::UNKNOWN;
+  bool     ff_disabled_[MAX_NODES] = {};     // per-node "send vel_ff = tor_ff = 0"
+
+  // ============================================================================
   // Host Command State
   // ============================================================================
 
@@ -490,6 +547,11 @@ private:
   static void rxTrampoline_(const CAN_message_t& msg);
   void handleRx_(const CAN_message_t& msg);
   void handleTxSdo_(uint32_t node_id, const uint8_t* buf, uint8_t len);
+
+  // FW 8 hand input-scale guard
+  void maybeRunHandScaleGuard_();
+  bool scaleGuardTakeReply_(uint32_t node_id, uint16_t endpoint_id, uint32_t value);
+  void finishHandScaleGuard_();
 
   // Heartbeat
   void maybePublishHeartbeat_();

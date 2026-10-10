@@ -49,6 +49,17 @@ const char* CanInterface::errorCodeToString(BallButlerError err) {
 // ---------------- static singleton ----------------
 CanInterface* CanInterface::s_instance_ = nullptr;
 
+// FW 8 hand input-scale guard: read order. The two scales come first so the
+// verdict never waits on the log-only reads behind them.
+const uint16_t CanInterface::kScaleGuardEndpoints_[CanInterface::SCALE_GUARD_READS_] = {
+  CanInterface::EndpointIds::CAN_INPUT_TORQUE_SCALE,   // 0: verdict
+  CanInterface::EndpointIds::CAN_INPUT_VEL_SCALE,      // 1: verdict
+  CanInterface::EndpointIds::CAN_NODE_ID,              // 2: log only
+  CanInterface::EndpointIds::FW_VERSION_MAJOR,         // 3: log only
+  CanInterface::EndpointIds::FW_VERSION_MINOR,         // 4: log only
+  CanInterface::EndpointIds::FW_VERSION_REVISION,      // 5: log only
+};
+
 // ---------------- ctor ----------------
 CanInterface::CanInterface()
   : can1_() {}
@@ -85,11 +96,19 @@ void CanInterface::begin(uint32_t bitrate) {
   // Initialise Ball Butler heartbeat state
   last_heartbeat_ms_ = 0;
   current_error_code_ = BallButlerError::NONE;
+
+  // FW 8 hand input-scale guard: idle; feedforward enabled until a check says
+  // otherwise (the first hand arm is the boot homing, which sends no scaled FF).
+  scale_guard_phase_ = ScaleGuardPhase::IDLE;
+  scale_guard_requested_ = false;
+  scale_guard_verdict_ = ScaleGuardVerdict::UNKNOWN;
+  for (int i = 0; i < MAX_NODES; ++i) ff_disabled_[i] = false;
 }
 
 // ---------------- loop ----------------
 void CanInterface::loop() {
   can1_.events();           // dispatch FIFO -> rxTrampoline_
+  maybeRunHandScaleGuard_(); // FW 8: hand input-scale SDO readback (async)
   maybePrintSyncStats_();   // optional stats print
   maybePublishHeartbeat_(); // Ball Butler heartbeat publishing
   maybePublishYawEstimate_(); // stamped yaw estimate, one frame per fresh yaw sample
@@ -164,7 +183,16 @@ int16_t CanInterface::clampToI16_(float x) {
 bool CanInterface::setRequestedState(uint32_t node_id, uint32_t requested_state) {
   uint8_t d[8] = { 0 };
   wrU32LE(&d[0], requested_state);
-  return sendRaw(makeId(node_id, Cmd::set_requested_state), d, 8);
+  const bool ok = sendRaw(makeId(node_id, Cmd::set_requested_state), d, 8);
+  // FW 8: every hand arm (homing, reload, trajectory streamer, ...) re-runs the
+  // input-scale guard. Only a flag here: the reads go out from loop(), so this
+  // call never adds frames to a caller's own command burst. An arm while a
+  // check is already in flight is covered by that check.
+  if (ok && node_id == hand_node_id_ && requested_state == ODriveState::CLOSED_LOOP &&
+      scale_guard_phase_ == ScaleGuardPhase::IDLE) {
+    scale_guard_requested_ = true;
+  }
+  return ok;
 }
 
 bool CanInterface::setControllerMode(uint32_t node_id, uint32_t control_mode, uint32_t input_mode) {
@@ -235,8 +263,11 @@ bool CanInterface::sendInputPos(uint32_t node_id, float pos_rev, float vel_ff_re
   const bool is_pitch = (node_id == pitch_node_id_);
   const float vel_scale = is_pitch ? kPitchVelScale_ : kHandVelScale_;
   const float tor_scale = is_pitch ? kPitchTorScale_ : kHandTorScale_;
-  const int16_t vel_i = clampToI16_(vel_ff_rev_per_s * vel_scale);
-  const int16_t tor_i = clampToI16_(torque_ff * tor_scale);
+  // FW 8: a drive whose CAN input scales read back different from ours gets
+  // no feedforward at all (position only) until a check reads them equal.
+  const bool ff_off = isFeedforwardDisabled(node_id);
+  const int16_t vel_i = ff_off ? int16_t(0) : clampToI16_(vel_ff_rev_per_s * vel_scale);
+  const int16_t tor_i = ff_off ? int16_t(0) : clampToI16_(torque_ff * tor_scale);
   d[4] = uint8_t(vel_i & 0xFF);
   d[5] = uint8_t((vel_i >> 8) & 0xFF);
   d[6] = uint8_t(tor_i & 0xFF);
@@ -304,6 +335,17 @@ bool CanInterface::requestArbitraryParameter(uint32_t node_id, uint16_t endpoint
   d[2] = (endpoint_id >> 8) & 0xFF;
   d[3] = 0;
 
+  return sendRaw(makeId(node_id, Cmd::RxSdo), d, 8);
+}
+
+// RxSdo READ, mirroring Jugglebot can-bridge odrive_protocol.h encode_sdo_read:
+// [OPCODE_READ][endpoint_id u16 LE][0][0 0 0 0]. The TxSdo reply carries the
+// endpoint id in bytes 1-2 and the value in bytes 4-7 (decode_sdo_response_u32).
+bool CanInterface::requestArbitraryParameterRead(uint32_t node_id, uint16_t endpoint_id) {
+  uint8_t d[8] = { 0 };
+  d[0] = OPCODE_READ;
+  wrU16LE(&d[1], endpoint_id);
+  d[3] = 0;
   return sendRaw(makeId(node_id, Cmd::RxSdo), d, 8);
 }
 
@@ -1104,6 +1146,12 @@ void CanInterface::handleTxSdo_(uint32_t node_id, const uint8_t* buf, uint8_t le
   const uint8_t opcode = buf[0];
   const uint16_t endpoint_id = (uint16_t)buf[1] | ((uint16_t)buf[2] << 8);
 
+  // FW 8: the scale guard's replies are consumed here and never reach
+  // arb_param_resp_, so they cannot displace the ball-in-hand poll's reply.
+  uint32_t value_u32;
+  memcpy(&value_u32, &buf[4], 4);
+  if (scaleGuardTakeReply_(node_id, endpoint_id, value_u32)) return;
+
   ArbitraryParamResponse resp;
   resp.opcode = opcode;
   resp.endpoint_id = endpoint_id;
@@ -1151,4 +1199,131 @@ void CanInterface::maybePrintSyncStats_() {
   dbg_->printf("[TimeSync] mean=%+.1f us  rms=%.1f us  min=%+d  max=%+d  n=%lu\n",
                (double)mean, (double)rms, stats_.minv, stats_.maxv, (unsigned long)stats_.n);
   stats_.clear();
+}
+// ================================================================================
+// FW 8 hand input-scale guard
+// ================================================================================
+// FW 6 sent the hand ODrive (S1, node 8, input_torque_scale 100) torque
+// feedforward at Jugglebot's scale 1000: 10x. FW 7 gave BB its own scales;
+// this checks them against the drive itself at every hand arm:
+//   - both scales read back == bb_hand_tor / bb_hand_vel -> feedforward on
+//     (clears a latch); INFO printed when the verdict becomes MATCH;
+//   - either reads back different                       -> latch ff_disabled_
+//     for the node at once (sendInputPos sends vel_ff = tor_ff = 0); loud
+//     warning every check while it persists;
+//   - a scale does not answer within SCALE_GUARD_READ_TIMEOUT_MS -> latch left
+//     as it was (on, unless an earlier check latched it off); warning.
+// Non-blocking and bounded: one RxSdo in flight, fixed arrays, the whole check
+// ends within SCALE_GUARD_TOTAL_MS. The endpoint ids are the S1 0.6.11-1 table's
+// (EndpointId::odrive_s1_0_6_11); the fw version is read and printed (not
+// gated on) so the log shows which build answered.
+
+bool CanInterface::scaleGuardTakeReply_(uint32_t node_id, uint16_t endpoint_id, uint32_t value) {
+  if (scale_guard_phase_ == ScaleGuardPhase::IDLE) return false;
+  if (node_id != hand_node_id_) return false;
+  for (uint8_t i = 0; i < SCALE_GUARD_READS_; ++i) {
+    if (kScaleGuardEndpoints_[i] != endpoint_id) continue;
+    scale_guard_val_[i] = value;
+    scale_guard_got_mask_ |= uint8_t(1u << i);
+    // A mismatching scale disables feedforward immediately, not at the end of
+    // the check; only a check in which both match clears it (finish).
+    if ((i == 0 && value != kHandTorScaleU32_) || (i == 1 && value != kHandVelScaleU32_)) {
+      ff_disabled_[node_id] = true;
+    }
+    return true;
+  }
+  return false;
+}
+
+void CanInterface::maybeRunHandScaleGuard_() {
+  if (hand_node_id_ >= MAX_NODES) return;
+  const uint32_t now = millis();
+
+  if (scale_guard_phase_ == ScaleGuardPhase::IDLE) {
+    if (!scale_guard_requested_) return;
+    scale_guard_requested_ = false;
+    scale_guard_idx_ = 0;
+    scale_guard_got_mask_ = 0;
+    for (uint8_t i = 0; i < SCALE_GUARD_READS_; ++i) scale_guard_val_[i] = 0;
+    scale_guard_start_ms_ = now;
+    scale_guard_phase_ = ScaleGuardPhase::SEND;
+  }
+
+  if (now - scale_guard_start_ms_ > SCALE_GUARD_TOTAL_MS) {
+    finishHandScaleGuard_();
+    return;
+  }
+
+  if (scale_guard_phase_ == ScaleGuardPhase::SEND) {
+    // A full TX queue just retries next loop (bounded by the total window).
+    if (requestArbitraryParameterRead(hand_node_id_, kScaleGuardEndpoints_[scale_guard_idx_])) {
+      scale_guard_sent_ms_ = now;
+      scale_guard_phase_ = ScaleGuardPhase::WAIT;
+    }
+    return;
+  }
+
+  // WAIT: next read on the reply, or after the per-read timeout.
+  const bool got = (scale_guard_got_mask_ >> scale_guard_idx_) & 0x01;
+  if (!got && (now - scale_guard_sent_ms_) <= SCALE_GUARD_READ_TIMEOUT_MS) return;
+  if (++scale_guard_idx_ >= SCALE_GUARD_READS_) {
+    finishHandScaleGuard_();
+    return;
+  }
+  scale_guard_phase_ = ScaleGuardPhase::SEND;
+}
+
+void CanInterface::finishHandScaleGuard_() {
+  scale_guard_phase_ = ScaleGuardPhase::IDLE;
+  const uint32_t node = hand_node_id_;
+  const uint8_t m = scale_guard_got_mask_;
+  const bool got_tor = m & 0x01, got_vel = m & 0x02;
+  const uint32_t tor = scale_guard_val_[0], vel = scale_guard_val_[1];
+  const bool bad = (got_tor && tor != kHandTorScaleU32_) || (got_vel && vel != kHandVelScaleU32_);
+  const ScaleGuardVerdict prev = scale_guard_verdict_;
+
+  ScaleGuardVerdict v;
+  if (bad) {
+    v = ScaleGuardVerdict::MISMATCH;
+    ff_disabled_[node] = true;
+  } else if (got_tor && got_vel) {
+    v = ScaleGuardVerdict::MATCH;
+    ff_disabled_[node] = false;
+  } else {
+    v = ScaleGuardVerdict::NO_REPLY;   // ff_disabled_ unchanged
+  }
+  scale_guard_verdict_ = v;
+
+  if (!dbg_) return;
+  if (v == ScaleGuardVerdict::MATCH && prev == ScaleGuardVerdict::MATCH) return;  // once per change
+
+  char tor_s[12], vel_s[12], nid_s[12], fw_s[16];
+  if (got_tor) snprintf(tor_s, sizeof(tor_s), "%lu", (unsigned long)tor); else snprintf(tor_s, sizeof(tor_s), "no-reply");
+  if (got_vel) snprintf(vel_s, sizeof(vel_s), "%lu", (unsigned long)vel); else snprintf(vel_s, sizeof(vel_s), "no-reply");
+  if (m & 0x04) snprintf(nid_s, sizeof(nid_s), "%lu", (unsigned long)scale_guard_val_[2]); else snprintf(nid_s, sizeof(nid_s), "?");
+  if ((m & 0x38) == 0x38) {
+    snprintf(fw_s, sizeof(fw_s), "%u.%u.%u", (unsigned)(scale_guard_val_[3] & 0xFF),
+             (unsigned)(scale_guard_val_[4] & 0xFF), (unsigned)(scale_guard_val_[5] & 0xFF));
+  } else {
+    snprintf(fw_s, sizeof(fw_s), "?");
+  }
+
+  if (v == ScaleGuardVerdict::MATCH) {
+    dbg_->printf("[ScaleGuard] INFO hand node %lu input_torque_scale=%s input_vel_scale=%s "
+                 "(expected %lu/%lu) MATCH - feedforward ON | drive node_id=%s fw=%s\n",
+                 (unsigned long)node, tor_s, vel_s, (unsigned long)kHandTorScaleU32_,
+                 (unsigned long)kHandVelScaleU32_, nid_s, fw_s);
+  } else if (v == ScaleGuardVerdict::MISMATCH) {
+    dbg_->printf("[ScaleGuard] !!!!! WARNING hand node %lu CAN input scale MISMATCH: drive "
+                 "input_torque_scale=%s input_vel_scale=%s, BB sends at %lu/%lu (bb_hand_tor/bb_hand_vel). "
+                 "vel_ff and torque_ff ZEROED for node %lu until both read back equal | drive node_id=%s fw=%s\n",
+                 (unsigned long)node, tor_s, vel_s, (unsigned long)kHandTorScaleU32_,
+                 (unsigned long)kHandVelScaleU32_, (unsigned long)node, nid_s, fw_s);
+  } else {
+    dbg_->printf("[ScaleGuard] WARNING hand node %lu input-scale readback incomplete "
+                 "(input_torque_scale=%s input_vel_scale=%s within %lu ms per read) - feedforward left %s | "
+                 "drive node_id=%s fw=%s\n",
+                 (unsigned long)node, tor_s, vel_s, (unsigned long)SCALE_GUARD_READ_TIMEOUT_MS,
+                 ff_disabled_[node] ? "OFF (earlier mismatch)" : "ON (unverified)", nid_s, fw_s);
+  }
 }
