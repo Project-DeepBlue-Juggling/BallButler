@@ -133,8 +133,20 @@ USB recovery stays `pio run -e teensy40` + `/home/jetson/bin/teensy_loader_cli -
   ODrives silent too), i.e. BB was powered down after the 23:49 sitting, so no `0x7D8` frames
   and no `BB_YAW_ESTIMATE` (0x93) could be observed. Rerun `bb_link_check.py` with BB on: it
   prints the 0x93 rate (expect ~100 Hz while fresh), the `yaw_age_us` distribution and the
-  stamp pairing with `BB_AXIS_ESTIMATES`. Then the ROS topic check above. Status stays
-  `in-progress` until then.
+  stamp pairing with `BB_AXIS_ESTIMATES`. Then the ROS topic check above.
+- **Link and ROS checks closed 2026-10-10.** With BB powered, `bb_link_check.py` saw `BB_YAW_ESTIMATE` (0x93) at
+  99.9 Hz, 500 of 500 paired with `BB_AXIS_ESTIMATES`, `yaw_age_us` median 3.0 ms, max 6.05 ms
+  (BB FW 6, bridge FW 28). On the ROS side the 2026-10-10 sittings from 13:45 on ran every BB
+  calibration on `yaw source stamped` (bb_yaw lag against mocap −0.2…+2.5 ms per sweep, where the
+  heartbeat had lagged 78–174 ms per session), and `bb_yaw_source` defaults to `auto` (stamped
+  when it streams) in the live stack since 2026-10-10 (Jugglebot `skill-stack` 308e0b8b). The
+  stamped stream's accuracy pay-off is in the Jugglebot logbook
+  (`2026-10-10-bb-yaw-offset-spread-stamped-source.md`, `2026-10-10-bb-base-marker-frame.md`).
+- **Regression found 2026-10-10 in the first throwing sitting on FW 6:** the regenerated `protocol_config.h`
+  carries Jugglebot's hand ODrive `InputScale::hand_tor = 1000`, which `CanInterface` applies to BB's own hand ODrive
+  (configured 100) — the hand torque feedforward goes out ×10 (pre-throw kick, 215 mm strokes, spinouts, throws
+  ~7 % slow, landings 117 mm short). Tracked in `2026-10-10-bb-hand-torque-ff-scale.md`; this entry stays
+  `in-progress` until FW 7 with BB's own hand scales is flashed and a throwing sitting passes.
 - **Pitfall fixed.** `platformio.ini`'s `upload_command` (and the header's rehearsal line)
   now point at `../../Jugglebot-skills/tools/teensy_link_bridge.py`, the checkout the live
   bridge was flashed from; the header says why.
