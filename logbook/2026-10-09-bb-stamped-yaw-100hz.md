@@ -2,7 +2,7 @@
 title: Stamped 100 Hz yaw — BB FW 6 sends YAW_ESTIMATE (0x7D8) for /bb/axis_estimates
 type: feature
 date: 2026-10-09
-status: in-progress
+status: resolved
 related_entries:
   - 2026-10-09-bb-local-calibration-result
 files_changed:
@@ -147,6 +147,9 @@ USB recovery stays `pio run -e teensy40` + `/home/jetson/bin/teensy_loader_cli -
   (configured 100) — the hand torque feedforward goes out ×10 (pre-throw kick, 215 mm strokes, spinouts, throws
   ~7 % slow, landings 117 mm short). Tracked in `2026-10-10-bb-hand-torque-ff-scale.md`; this entry stays
   `in-progress` until FW 7 with BB's own hand scales is flashed and a throwing sitting passes.
+- **Closed 2026-10-10 21:40:** FW 7 (own hand scales) flashed 17:21 and verified by the 19:23 sitting (all hand criteria
+  back to FW 5 values, landings 22.3 mm RMS); FW 8 (SDO scale guard, MATCH at boot) flashed 21:37. The stamped yaw has
+  driven every BB calibration since 13:45. Status → resolved.
 - **Pitfall fixed.** `platformio.ini`'s `upload_command` (and the header's rehearsal line)
   now point at `../../Jugglebot-skills/tools/teensy_link_bridge.py`, the checkout the live
   bridge was flashed from; the header says why.

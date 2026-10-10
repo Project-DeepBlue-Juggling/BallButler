@@ -2,7 +2,7 @@
 title: BB FW 6 sends the hand ODrive ten times the planned torque feedforward — the regenerated protocol_config.h took Jugglebot's hand_tor = 1000 for BB's own hand (configured 100); pre-throw kick, 215 mm strokes, spinouts, throws ~7 % slow
 type: bugfix
 date: 2026-10-10
-status: in-progress
+status: resolved
 phase: "BB accuracy — yaw gauge settlement"
 related_entries:
   - 2026-10-09-bb-stamped-yaw-100hz
@@ -194,3 +194,23 @@ Owner's decision: BB-specific keys in Jugglebot's `input_scales`, one pair per a
   line with `node_id=8 fw=0.6.11`.
 - Follow-up: read node 7's `input_vel_scale` / `input_torque_scale` and refresh `bb_pitch_odrive_micro_config.json`
   (node_id 0 in the saved copy).
+
+## Outcome (2026-10-10 evening)
+
+- **FW 7 verified on hardware** (sitting 2026-10-10 19:23, session `20261010T082544_262394Z`, 40 throws; analysis
+  `~/bb_calibration_sessions/fw7_sitting_20261010/REPORT.md`): hand rest before a throw +0.50 mm (FW 6 −3.21, FW 5 +0.43);
+  pre-throw kick none (max 5.5 mm/s; FW 6 350 mm/s on 40/40); reload-retry move 23–33 mm/s (FW 6 284–365); stroke end
+  236.05 mm (FW 6 215.55, FW 5 236.05); spinouts 0 (FW 6 3); launch speed / predicted 0.956 (FW 6 0.873, FW 5 0.943);
+  catch time vs predicted +26.8 ms (FW 6 −10.1, FW 5 +27.2). Landings (28 accepted): mean (+4.0, −4.6) mm, RMS 22.3 mm,
+  along-range +2.7 ± 3.5 mm — the FW 6 short-fall is gone and the result is indistinguishable from FW 5. The 12
+  rejections were mocap frame loss under Jetson load (Jugglebot logbook `2026-10-10-mocap-frame-loss-under-load`), not BB.
+- **FW 8 (the SDO scale guard) flashed 2026-10-10 21:36–21:37** from `main` 10f01ac over CAN (166 912 B in 26.0 s,
+  0 rewinds, VERIFY OK crc32 0xC472A4E5, receipt `FW version: 7 -> 8`), with BB's USB serial captured through the
+  reboot (`~/bb_calibration_sessions/hand_jolt_20261010/fw8_flash_serial_20261010.log`): at the boot homing arm
+  `[ScaleGuard] INFO hand node 8 input_torque_scale=100 input_vel_scale=100 (expected 100/100) MATCH - feedforward ON |
+  drive node_id=8 fw=?`, then `[Home] node=8 homed`, `BOOT -> IDLE`; no GPIO-poll timeouts. The S1 endpoint ids 273/272
+  therefore fit the live drive. Cosmetic follow-up: the fw-version reads (endpoints 10/11/12, log only) came back `?`
+  within the check's budget — not needed for the verdict.
+- Post-flash `bb_link_check.py`: bridge FW 28, BB on the bus, stamped yaw paired. Jugglebot side at `skill-stack`
+  9f2eecdb (`BB_FW_VERSION_EXPECTED` 8). Status → resolved. The S1 table is committed in Jugglebot
+  `config/ODrive config Files/odrive-s1-0.6.11-1_flat_endpoints.json`.
