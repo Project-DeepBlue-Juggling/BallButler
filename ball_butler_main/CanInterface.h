@@ -18,7 +18,12 @@ class StateMachine;
  *
  * Notes
  *  - Uses CAN1.
- *  - vel_ff / torque_ff are scaled internally by 100.0 int16.
+ *  - set_input_pos vel_ff / torque_ff are sent as int16 * scale, the scale
+ *    picked per node: BB's OWN keys (InputScale::bb_hand_* for the hand,
+ *    bb_pitch_* for pitch), never Jugglebot's hand_* / leg_*.  Each MUST
+ *    match that drive's axis0.config.can.input_vel_scale /
+ *    input_torque_scale (a mismatch is a silent torque/velocity error:
+ *    FW 6 borrowed hand_tor = 1000 for a drive set to 100, a 10x torque FF).
  */
 
 // CAN IDs live in BallButlerConfig.h (namespace CanIds)
@@ -350,8 +355,14 @@ private:
 
   static constexpr uint8_t ALPHA_SHIFT_ = 3;
   static constexpr uint32_t PRINT_PERIOD_US_ = CanCfg::SYNC_STATS_PRINT_US;
-  static constexpr float kVelScale_ = InputScale::hand_vel;
-  static constexpr float kTorScale_ = InputScale::hand_tor;
+  // BB's own drive scales (protocol_config.yaml input_scales bb_*), selected
+  // per node in sendInputPos.  Hand: odrive_s1_bb_hand_config.json (100/100).
+  // Pitch: bb_pitch_odrive_micro_config.json (1000/1000, not confirmed on the
+  // live drive; PitchAxis only ever sends zero feedforward).
+  static constexpr float kHandVelScale_  = InputScale::bb_hand_vel;
+  static constexpr float kHandTorScale_  = InputScale::bb_hand_tor;
+  static constexpr float kPitchVelScale_ = InputScale::bb_pitch_vel;
+  static constexpr float kPitchTorScale_ = InputScale::bb_pitch_tor;
 
   // ============================================================================
   // Static Members

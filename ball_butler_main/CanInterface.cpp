@@ -230,8 +230,13 @@ bool CanInterface::sendInputPos(uint32_t node_id, float pos_rev, float vel_ff_re
   }
   uint8_t d[8];
   wrFloatLE(&d[0], pos_rev);
-  const int16_t vel_i = clampToI16_(vel_ff_rev_per_s * kVelScale_);
-  const int16_t tor_i = clampToI16_(torque_ff * kTorScale_);
+  // Per-node scales: pitch has its own pair; every other node (in practice
+  // only the hand) uses the hand pair, as all nodes did before FW 7.
+  const bool is_pitch = (node_id == pitch_node_id_);
+  const float vel_scale = is_pitch ? kPitchVelScale_ : kHandVelScale_;
+  const float tor_scale = is_pitch ? kPitchTorScale_ : kHandTorScale_;
+  const int16_t vel_i = clampToI16_(vel_ff_rev_per_s * vel_scale);
+  const int16_t tor_i = clampToI16_(torque_ff * tor_scale);
   d[4] = uint8_t(vel_i & 0xFF);
   d[5] = uint8_t((vel_i >> 8) & 0xFF);
   d[6] = uint8_t(tor_i & 0xFF);
