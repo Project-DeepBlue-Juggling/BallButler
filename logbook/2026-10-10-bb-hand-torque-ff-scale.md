@@ -125,6 +125,21 @@ Owner's decision: BB-specific keys in Jugglebot's `input_scales`, one pair per a
   lateral error as a translation: slope −0.3 ± 0.6°, intercept +46 ± 11 mm), the pin stays 0.208°, and the aim
   correction is not refitted from it.
 
+### Flash record (2026-10-10 17:20–17:21 local)
+
+- From the merged `main` (`da3bfbe`), `pio run -e teensy40_can -t upload` in `ball_butler_main/` (the ini's
+  `upload_command` → `~/Desktop/Jugglebot-skills/tools/teensy_link_bridge.py --fw-update … --target bb`), ROS launch
+  down, BB IDLE (state 1) and visible on the bridge's BB bus at 457 frames/s beforehand. DATA 163 840 B in 25.4 s
+  (pipeline depth 4; 26 BAD_SEQ rewinds in the first second, 0 window retries, 0 missing acks — FW 5 → 6 had 0
+  rewinds), VERIFY OK crc32 0x1595BCA5, COMMIT OK, receipt **`Ball Butler FW version: 6 -> 7`**; 43 s end to end.
+- Post-flash `scripts/bb_link_check.py`: bridge FW 28, BB bus 459 frames/s, BB state 1, `BB_YAW_ESTIMATE` 99.8 Hz with
+  401/401 stamps paired; hand still reads −0.097 rev (−3.2 mm) — it stays on the stop until the next reload moves it,
+  so the behavioural check (rest at ~+0.46 mm after a reload, no pre-throw kick, stroke to ~236 mm, no spinouts) is
+  the owner's first sitting on FW 7.
+- Jugglebot side merged and installed (`skill-stack` 456fd788: `bb_hand_*` 100/100, `bb_pitch_*` 1000/1000,
+  `BB_FW_VERSION_EXPECTED` 7); `tests/firmware/test_bb_fw_update_xref.py` + `test_udp_protocol_xlang.py` against this
+  tree: 49 passed; `generate_config.py --check`: CONFIG FRESH, no external drift.
+
 ## Open Questions / Follow-ups
 
 - ~~The live node 8 scale read~~ — owner read `input_torque_scale` = 100 with odrivetool, 2026-10-10.
