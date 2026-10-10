@@ -17,8 +17,10 @@ files_changed:
   - logbook/INDEX.md
 external_changes:
   - "Jugglebot branch bb-own-input-scales-2026-10-10 (e0156a7d): config/protocol_config.yaml input_scales + bb_hand_vel/tor 100/100, bb_pitch_vel/tor 1000/1000; regenerated config/generated/protocol_config.{h,py}, ros_ws/src/jugglebot/jugglebot/protocol_config.py and the Platform / can-bridge / CatchingCone protocol_config.h copies; teensy_link/rpc_args.py BB_FW_VERSION_EXPECTED 6 -> 7; logbook/2026-10-10-bb-own-input-scales.md + INDEX.md"
+  - "Jugglebot branch bb-s1-sdo-scale-guard-2026-10-10 (b02c44e0, FW 8): config/ODrive config Files/odrive-s1-0.6.11-1_flat_endpoints.json (new, the owner's S1 table); config/protocol_config.yaml endpoints.odrive_s1_0_6_11 + can_input_torque_scale 273, can_input_vel_scale 272, can_node_id 262, fw_version_* 10/11/12, hw_version_* 6/7, commutation_mapper_pos_abs 488 -> 451; regenerated protocol_config.{h,py} + copies; teensy_link/rpc_args.py BB_FW_VERSION_EXPECTED 7 -> 8; logbook/2026-10-10-bb-s1-sdo-endpoints.md + INDEX.md"
 commits:
   - aac6a98
+  - 17d484a
 subsystem:
   - firmware
   - throwing
@@ -99,15 +101,57 @@ Owner's decision: BB-specific keys in Jugglebot's `input_scales`, one pair per a
 3. `CanInterface::sendInputPos` selects the pair per node: `pitch_node_id_` -> `bb_pitch_*`, every other node
    (in practice the hand) -> `bb_hand_*`. The header comment at `CanInterface.h:21` now says this.
 4. `FwUpdate::FW_VERSION` 6 -> 7; Jugglebot `BB_FW_VERSION_EXPECTED` 6 -> 7 (bridge stays 28).
-5. **SDO readback guard NOT added.** It needs the ODrive S1 0.6.11 endpoint id of
-   `axis0.config.can.input_torque_scale`, and no authoritative local source has it: neither repo carries an S1
-   flat_endpoints file, and of the five firmware ELFs in `~/.cache/odrivetool/firmware/` (each embeds its endpoint
-   tree) none matches the S1 0.6.11 ids proven on BB (`get_gpio_states` 700, `commutation_mapper.pos_abs` 488).
-   The one with 726 / 283 is the Pro 0.6.11 (agrees with the tabled 283); `pDOE…` has pos_abs 488 but gpio 675,
-   so it is some other build. Not guessed. Follow-up below.
+5. **SDO readback guard — FW 8 (built 2026-10-10 on branch `bb-fw8-sdo-scale-guard`, NOT flashed).** Not in
+   FW 7: no authoritative S1 0.6.11 endpoint table was available then (FW 7's note: of the five ELFs in
+   `~/.cache/odrivetool/firmware/` the one with 726 / 283 is the Pro 0.6.11; `pDOE…` has pos_abs 488 but gpio 675).
+   The owner then supplied `odrive-s1-0.6.11-1_flat_endpoints.json` (fw 0.6.11-1, hw 5.2.0, 631 endpoints), now in
+   Jugglebot `config/ODrive config Files/`; Jugglebot `b02c44e0` adds the S1 ids to `endpoints.odrive_s1_0_6_11`
+   (`can_input_torque_scale` 273, `can_input_vel_scale` 272, `can_node_id` 262, `fw_version_*` 10/11/12,
+   `hw_version_*` 6/7) and the regenerated header is copied here (diff: that block only).
+   - **488 was not proven.** The S1 block's `commutation_mapper_pos_abs` 488 is
+     `axis0.task_times.can_heartbeat.length` in that table (`axis0.commutation_mapper.pos_abs` is 451,
+     `axis0.pos_vel_mapper.pos_abs` 429). It never went on the wire from this firmware:
+     `CanInterface::isEncoderSearchComplete` is its only user and nothing calls it. Corrected to 451 at the source.
+     Only `get_gpio_states` 700 is proven by use (the ball-in-hand poll). `zTesting/sensored_hand_testing/CanInterface.h`
+     still hardcodes 488/700 (a test sketch, not touched).
+   - **Frame.** RxSdo (cmd 0x04) `[OPCODE_READ=0][endpoint u16 LE][0][0 0 0 0]`, the frame Jugglebot's can-bridge
+     builds with `odrive_protocol.h` `encode_sdo_read` for the Pro's torque-scale readback (`rpc.cpp`
+     `hand_torque_scale_rpc`); reply TxSdo (cmd 0x05) endpoint in bytes 1-2, value u32 LE in bytes 4-7
+     (`decode_sdo_response_u32`). New helper `CanInterface::requestArbitraryParameterRead`. The existing
+     `requestArbitraryParameter` sends **OPCODE_WRITE** with a zero payload: the function-invoke idiom for
+     `get_gpio_states`; on a property such as `input_torque_scale` (rw) it would write 0. It now carries that warning.
+   - **Trigger.** `CanInterface::setRequestedState(hand node, CLOSED_LOOP)` sets a flag (homing, reload, the
+     trajectory streamer's arm: every hand arm); `loop()` runs the check. An arm while a check is in flight is
+     covered by that check.
+   - **Check.** One RxSdo READ in flight at a time: 273, 272, then 262, 10, 11, 12 (log only). Per read 50 ms,
+     whole check 250 ms. `handleTxSdo_` hands a reply from the hand node with one of those endpoint ids to the
+     guard and does not store it in `arb_param_resp_`, so it cannot displace the ball-in-hand poll's
+     `get_gpio_states` reply. No allocation, no blocking, fixed arrays.
+   - **Match** (both scales == `bb_hand_tor` / `bb_hand_vel`, 100 / 100): feedforward on, latch cleared; one INFO line
+     when the verdict becomes MATCH (`[ScaleGuard] INFO hand node 8 input_torque_scale=100 input_vel_scale=100
+     (expected 100/100) MATCH - feedforward ON | drive node_id=8 fw=0.6.11`), silent on repeat matches.
+   - **Mismatch** (either scale differs): `ff_disabled_[8]` latched as soon as that reply arrives;
+     `sendInputPos` then sends `vel_ff = tor_ff = 0` for node 8 (position-only tracking); a `[ScaleGuard] !!!!! WARNING`
+     line with both values on every check while it persists. Cleared only by a check in which both match.
+   - **No reply** (a scale missing after its 50 ms): latch left as it was (on at boot; off if an earlier check
+     latched it); a `[ScaleGuard] WARNING ... readback incomplete` line on every check.
+   - **Host.** USB serial only. The 0x7D1 heartbeat's byte 1 is "error code when ERROR, else 0" in the can-bridge,
+     the UDP heartbeat field and `ball_butler.py`; CMD_RESULT (0x7D5) has no fitting command/outcome. No frame changed.
+   - **Limits.** (a) Feedforward is on until the first verdict; the first arm after boot is the homing, which sends
+     float `set_input_vel` (unscaled), so in practice the verdict lands before any scaled FF, but a streamer arm
+     that starts a check sends its first frames before the reply (a few ms). (b) The fw version is printed, not
+     gated on: if the drive is not S1 0.6.11-1, 273/272 may name other registers — a read is harmless, and an
+     unlikely value reads as MISMATCH (FF off, loud). (c) Only the hand is checked; pitch sends zero FF anyway.
+     (d) A mismatch degrades throws (no FF) rather than refusing them.
 6. Not done (separate, optional): hold closed loop in `HandTrajectoryStreamer.h:131-134` until the hand stops.
 
 ## Verification
+
+- FW 8 build (2026-10-10, branch `bb-fw8-sdo-scale-guard`): `pio run -e teensy40_can` and `-e teensy40` SUCCESS, no
+  warnings (the build has no `-Wall`; `CanInterface.cpp` compiled with `-Wall -Wextra` gives 12 warnings, all in
+  FlexCAN_T4, the same 12 as FW 7); `firmware.hex` 469 577 bytes, both envs byte-identical, sha256
+  `a03524d3…02b05ec`. ELF: `kScaleGuardEndpoints_` = 273, 272, 262, 10, 11, 12. Not flashed; no hardware run.
+  Jugglebot `JUGGLEBOT_BALLBUTLER_DIR=~/Desktop/BallButler-fw8`: scoped tests 1088 passed, 1 skipped; `--full` PASS.
 
 - Build (2026-10-10): `pio run -e teensy40_can` and `-e teensy40`: SUCCESS, `firmware.hex` 460 937 bytes (both
   envs byte-identical, sha256 `0ec1f953…10da`). Disassembly: `sendInputPos`'s literal pool holds only `100.0f`
@@ -145,8 +189,8 @@ Owner's decision: BB-specific keys in Jugglebot's `input_scales`, one pair per a
 - ~~The live node 8 scale read~~ — owner read `input_torque_scale` = 100 with odrivetool, 2026-10-10.
 - ~~A similar borrowed constant elsewhere~~ — none: `InputScale::` had one use (`CanInterface.h:353-354`).
 - Owed: flash FW 7 (receipt `FW version: 6 -> 7`), then the FW 7 throwing sitting against the pass criteria above.
-- Follow-up: the S1 torque-scale SDO readback at hand arm, once the S1 0.6.11 endpoint id comes from an
-  authoritative source (the S1 0.6.11 flat_endpoints.json, or an odrivetool dump of the drive's tree). Zero torque
-  FF on a mismatch, keep FF + warn on no response.
+- ~~Follow-up: the S1 torque-scale SDO readback at hand arm~~ — built as FW 8 (Fix item 5), flash owed: receipt
+  `FW version: 7 -> 8`; at the first hand arm (boot homing) USB serial should show the `[ScaleGuard] INFO ... MATCH`
+  line with `node_id=8 fw=0.6.11`.
 - Follow-up: read node 7's `input_vel_scale` / `input_torque_scale` and refresh `bb_pitch_odrive_micro_config.json`
   (node_id 0 in the saved copy).
