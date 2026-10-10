@@ -4,10 +4,10 @@
 # Prerequisites: the sweep-estimator branch merged and built in the live stack; the
 # stack launched; BB calibrated by its sweep (mocap_node logs the method, fitted
 # latency and gate verdict); hopper loaded; QTM continuous capture running.
-# Usage: ./run_item2_sitting.sh [N_THROWS]      (defaults: 40 throws, DX DY 0.3 -0.6)
+# Usage: [PLAN=<plan.json>] ./run_item2_sitting.sh [N_THROWS]      (defaults: local_validation_plan.json, 40 throws, DX DY 0.3 -0.6)
 set -euo pipefail
 N=${1:-40}
-PLAN=local_validation_plan.json
+PLAN=${PLAN:-local_validation_plan.json}   # e.g. PLAN=local_validation_plan_range.json for the range-weighted pin plan
 CAND=${CAND:-$HOME/bb_calibration_sessions/20261009T002142_931068Z/analysis/correction_candidate.json}
 SOLVER_SHA=${SOLVER_SHA:-cb09095e}
 DXDY=${DXDY:-"0.3 -0.6"}
@@ -15,7 +15,8 @@ WS=${WS:-$HOME/Desktop/Jugglebot-skills/ros_ws/install/setup.bash}
 VENV=$HOME/Desktop/PDJ_venv/venv/bin/activate
 cd "$(dirname "$0")"
 # shellcheck disable=SC1090
-source "$VENV"; source "$WS"
+# ROS/colcon setup scripts read unset vars (COLCON_TRACE etc.), so drop -u while sourcing
+set +u; source "$VENV"; source "$WS"; set -u
 LOG=$(mktemp /tmp/item2_sitting_XXXX.log)
 echo "== 1/4 preflight (nothing moves): solver sha, candidate, $N feasible throws"
 python run_local_calibration.py run $PLAN --schedule-to-mocap $DXDY --expect-solver-sha "$SOLVER_SHA" \

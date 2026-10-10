@@ -18,7 +18,10 @@ say separately whether the affine itself still holds; a RE_PIN never needs a ref
 unless those fail after the re-pin.
 
 Usage (after analyze_local_calibration.py <session>/session.json --extract-only):
-    /usr/bin/python3 settle_yaw_gauge.py <session>/session.json
+    /usr/bin/python3 settle_yaw_gauge.py <session>/session.json [<other session>/session.json ...]
+Several sessions pool their accepted throws (each in its own session's BB pose and
+yaw-offset gauge; the node's used offset is reported from the first). The settlement
+is written next to the first session; the affine RMS note comes from its report.
 """
 import argparse
 import json
@@ -122,19 +125,28 @@ def describe(result):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    p.add_argument('session_json')
+    p.add_argument('session_json', nargs='+',
+                   help='session.json of the sitting; more than one pools their accepted throws')
     p.add_argument('--tolerance-deg', type=float, default=BEARING_TOLERANCE_DEG)
     p.add_argument('--min-accepted', type=int, default=MIN_ACCEPTED)
     args = p.parse_args(argv)
-    session_path = Path(args.session_json)
+    paths = [Path(x) for x in args.session_json]
+    session_path = paths[0]
     session = json.loads(session_path.read_text())
     analysis = session_path.parent / 'analysis'
-    extraction = json.loads((analysis / 'extraction.json').read_text())
     report_path = analysis / 'extraction_report.json'
     report = json.loads(report_path.read_text()) if report_path.is_file() else None
-    rows = bearing_rows(extraction['accepted'], session['bb_pose'])
+    rows, pooled = [], []
+    for path in paths:
+        sess = json.loads(path.read_text())
+        acc = json.loads((path.parent / 'analysis' / 'extraction.json').read_text())['accepted']
+        rows.extend(bearing_rows(acc, sess['bb_pose']))
+        pooled.append(dict(session=str(path.resolve()), accepted=len(acc),
+                           used_yaw_offset_deg=math.degrees(sess['bb_pose']['yaw_offset_rad'])))
     result = settle(session, rows, report, args.tolerance_deg, args.min_accepted)
     result['session'] = str(session_path.resolve())
+    if len(paths) > 1:
+        result['pooled_sessions'] = pooled
     (analysis / 'yaw_gauge_settlement.json').write_text(json.dumps(result, indent=2) + '\n')
     print('\n'.join(describe(result)))
     print('written %s' % (analysis / 'yaw_gauge_settlement.json'))
