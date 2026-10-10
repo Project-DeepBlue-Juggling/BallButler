@@ -20,6 +20,7 @@ external_changes:
   - "Jugglebot branch bb-s1-sdo-scale-guard-2026-10-10 (b02c44e0, FW 8): config/ODrive config Files/odrive-s1-0.6.11-1_flat_endpoints.json (new, the owner's S1 table); config/protocol_config.yaml endpoints.odrive_s1_0_6_11 + can_input_torque_scale 273, can_input_vel_scale 272, can_node_id 262, fw_version_* 10/11/12, hw_version_* 6/7, commutation_mapper_pos_abs 488 -> 451; regenerated protocol_config.{h,py} + copies; teensy_link/rpc_args.py BB_FW_VERSION_EXPECTED 7 -> 8; logbook/2026-10-10-bb-s1-sdo-endpoints.md + INDEX.md"
 commits:
   - aac6a98
+  - 17d484a
 subsystem:
   - firmware
   - throwing
