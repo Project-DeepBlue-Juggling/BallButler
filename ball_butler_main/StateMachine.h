@@ -153,6 +153,16 @@ public:
   // Request ball-presence check (enters CHECKING_BALL, then RELOADING if missing)
   bool requestCheckBall();
   bool requestCalibrateLocation();
+
+  // Host throw CANCEL (CANCEL_CMD, FW 9). Aborts a throw that is queued
+  // (throw_pending_) or armed in the streamer but has NOT sent its first
+  // (wind-up) frame: no hand motion, ball retained, back to IDLE, and the
+  // throw's terminal CMD_RESULT is THROW_ABORTED_BY_HOST. The first wind-up
+  // frame is the point of no return: after it the cancel is a no-op and the
+  // throw completes. Always publishes exactly one CMD_RESULT of type CANCEL:
+  // OK (aborted) / CANCEL_TOO_LATE / CANCEL_NOTHING_PENDING, detail1 = ms
+  // left to the release instant at receipt (negative = already past).
+  void requestCancelThrow();
   
   // Request tracking mode (called when HOST_THROW_CMD has speed=0)
   // Updates yaw/pitch targets while in TRACKING state

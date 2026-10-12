@@ -949,7 +949,8 @@ void CanInterface::handleRx_(const CAN_message_t& msg) {
   // motion/state command rather than queue one that could act on a parked axis.
   if (FwUpdate::sessionOpen() &&
       (msg.id == CanIds::HOST_THROW_CMD || msg.id == CanIds::RELOAD_CMD ||
-       msg.id == CanIds::RESET_CMD || msg.id == CanIds::CALIBRATE_LOC_CMD)) {
+       msg.id == CanIds::RESET_CMD || msg.id == CanIds::CALIBRATE_LOC_CMD ||
+       msg.id == CanIds::CANCEL_CMD)) {
     if (dbg_ && dbg_can_) {
       dbg_->printf("[CAN] id=0x%03lX ignored: firmware-update session open\n", (unsigned long)msg.id);
     }
@@ -1037,6 +1038,18 @@ void CanInterface::handleRx_(const CAN_message_t& msg) {
     }
     if (state_machine_) {
       state_machine_->reset();
+    }
+    return;
+  }
+
+  // Host -> BB throw CANCEL (FW 9): abort a queued/armed throw whose wind-up
+  // has not started. The state machine answers on CMD_RESULT (type CANCEL).
+  if (msg.id == CanIds::CANCEL_CMD && msg.len == 0 && !msg.flags.remote) {
+    if (dbg_can_ && dbg_) {
+      dbg_->printf("[CAN<-CANCEL] id=0x%03lX\n", (unsigned long)msg.id);
+    }
+    if (state_machine_) {
+      state_machine_->requestCancelThrow();
     }
     return;
   }

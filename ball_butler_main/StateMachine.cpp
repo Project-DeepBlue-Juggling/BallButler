@@ -807,6 +807,58 @@ bool StateMachine::requestThrow(float yaw_deg, float pitch_deg, float speed_mps,
   return true;
 }
 
+// requestCancelThrow() - Host throw CANCEL (CANCEL_CMD, FW 9)
+//
+// The countdown lives HERE: the release instant is absolute (synced wall
+// clock) and executeThrow_ arms the streamer at once, so BB sits in THROWING
+// for the whole lead with the streamer waiting for its first (wind-up) frame.
+// Until that frame is sent nothing has moved and the throw can be dropped
+// exactly like the Layer C not-settled abort: ball retained, back to IDLE.
+// Once it is sent the hand is accelerating the ball — the cancel is a no-op.
+void StateMachine::requestCancelThrow() {
+  const int64_t left_us = (int64_t)pending_throw_wall_us_ - (int64_t)can_.wallTimeUs();
+  int64_t left_ms = left_us / 1000;
+  if (left_ms > 32767) left_ms = 32767;
+  if (left_ms < -32768) left_ms = -32768;
+  const int16_t left = (int16_t)left_ms;
+
+  // (a) Queued by requestThrow but not yet executed (one loop at most).
+  // (b) Armed: THROWING with the streamer still waiting for its first frame.
+  bool aborted = false;
+  if (throw_pending_) {
+    throw_pending_ = false;
+    aborted = true;
+  } else if (state_ == RobotState::THROWING && streamer_.cancelBeforeFirstFrame()) {
+    aborted = true;
+  }
+
+  if (aborted) {
+    debugf_("[SM] Throw CANCELLED by host %.0f ms before release — ball retained, returning to IDLE\n",
+            (double)(left_us / 1000.0));
+    // The throw's single terminal outcome, then the cancel's own answer.
+    can_.publishCmdResult(BallButlerCommandType::THROW,
+                          BallButlerCommandOutcome::THROW_ABORTED_BY_HOST, -1, left);
+    can_.publishCmdResult(BallButlerCommandType::CANCEL,
+                          BallButlerCommandOutcome::OK, -1, left);
+    if (state_ == RobotState::THROWING) enterState_(RobotState::IDLE);
+    return;
+  }
+
+  if (state_ == RobotState::THROWING) {
+    // Wind-up already started (or the post-throw delay): the throw proceeds
+    // and reports its own terminal outcome.
+    debugf_("[SM] Throw cancel TOO LATE (wind-up started, release in %.0f ms)\n",
+            (double)(left_us / 1000.0));
+    can_.publishCmdResult(BallButlerCommandType::CANCEL,
+                          BallButlerCommandOutcome::CANCEL_TOO_LATE, -1, left);
+    return;
+  }
+
+  debugf_("[SM] Throw cancel: nothing pending (state %s)\n", robotStateToString(state_));
+  can_.publishCmdResult(BallButlerCommandType::CANCEL,
+                        BallButlerCommandOutcome::CANCEL_NOTHING_PENDING, -1, 0);
+}
+
 // requestCheckBall() - Queue a check ball presence request
 bool StateMachine::requestCheckBall() {
   // Only accept check ball commands if in IDLE or TRACKING states

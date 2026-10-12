@@ -73,7 +73,7 @@ namespace FwUpdate {
 // INFO reply is the only receipt that a COMMIT landed. Jugglebot pins the
 // expected value in teensy_link/rpc_args.py BB_FW_VERSION_EXPECTED.
 constexpr char     FW_NAME[]  = "ballbutler-main";
-constexpr uint16_t FW_VERSION = 8;   // 1: 2026-09-28 first image with the CAN receiver (USB-flashed)
+constexpr uint16_t FW_VERSION = 9;   // 1: 2026-09-28 first image with the CAN receiver (USB-flashed)
                                      // 2: 2026-09-28 no code change — the first CAN-flashed image; the version is the receipt
                                      // 3: 2026-09-28 no code change — receipt for the faster transfer (host sector pause 0.5 -> 0.12 s)
                                      // 4: 2026-09-28 no code change — receipt for the pipelined transfer (bridge FW 22, depth 4)
@@ -81,6 +81,7 @@ constexpr uint16_t FW_VERSION = 8;   // 1: 2026-09-28 first image with the CAN r
                                      // 6: 2026-10-09 YAW_ESTIMATE (0x7D8): stamped yaw per fresh 150 Hz sample for /bb/axis_estimates
                                      // 7: 2026-10-10 BB's own CAN input scales (InputScale::bb_hand_* 100/100, bb_pitch_*): FW 6 sent the hand 10x torque FF (Jugglebot's hand_tor 1000)
                                      // 8: 2026-10-10 hand input-scale guard: SDO READ of node 8's can.input_torque/vel_scale (S1 ids 273/272) at every hand arm; mismatch zeroes that node's vel/tor FF
+                                     // 9: 2026-10-13 throw CANCEL (CANCEL_CMD 0x7D9): a throw whose first wind-up frame is not out is dropped (ball retained, IDLE, THROW_ABORTED_BY_HOST); CMD_RESULT type CANCEL answers OK / CANCEL_TOO_LATE / CANCEL_NOTHING_PENDING
 
 // Wire the receiver to the hardware it parks. Call first thing in setup(),
 // before canif.begin(): until attached, every command is ignored.

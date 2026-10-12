@@ -134,6 +134,18 @@ struct HandTrajectoryStreamer {
     }
   }
 
+  // Host throw cancel (StateMachine::requestCancelThrow, FW 9): stop an armed
+  // trajectory that has NOT sent its first frame — the same clean exit as the
+  // Layer C abort above (no frame sent, hand at rest, ball retained). Returns
+  // false once any frame is out (the point of no return) or when idle.
+  bool cancelBeforeFirstFrame() {
+    if (!active || idx != 0) return false;
+    require_settled_ = false;
+    aborted_ = true;
+    active = false;
+    return true;
+  }
+
   bool isActive() const { return active; }
   bool wasAborted() const { return aborted_; }
 };

@@ -81,6 +81,7 @@ namespace CanIds {
   constexpr uint32_t RELOAD_CMD        = BallButlerCanId::RELOAD_CMD;
   constexpr uint32_t RESET_CMD         = BallButlerCanId::RESET_CMD;
   constexpr uint32_t CALIBRATE_LOC_CMD = BallButlerCanId::CALIBRATE_LOC_CMD;
+  constexpr uint32_t CANCEL_CMD        = BallButlerCanId::CANCEL_CMD;       // host → BB, throw cancel (FW 9)
   constexpr uint32_t CMD_RESULT        = BallButlerCanId::CMD_RESULT;
   constexpr uint32_t TIME_SYNC_CMD     = SharedCanId::TIME_SYNC;
   constexpr uint32_t FW_UPDATE_CMD     = BallButlerCanId::FW_UPDATE_CMD;    // host → BB (FwUpdate.h)
