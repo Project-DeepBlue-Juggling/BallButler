@@ -10,7 +10,7 @@ and its stamp pairing with BB_AXIS_ESTIMATES. Use it right after a flash
 
 ROS launch must be DOWN (the bridge is a single-owner UDP link). The client
 code comes from the checkout the live bridge was flashed from (see
-platformio.ini's upload_command): ~/Desktop/Jugglebot-skills.
+platformio.ini's upload_command): ~/Desktop/Jugglebot.
 
     ~/Desktop/PDJ_venv/venv/bin/python scripts/bb_link_check.py [--seconds 4]
 """
@@ -22,7 +22,7 @@ import statistics
 import sys
 import time
 
-JUGGLEBOT = os.environ.get('JUGGLEBOT_DIR', os.path.expanduser('~/Desktop/Jugglebot-skills'))
+JUGGLEBOT = os.environ.get('JUGGLEBOT_DIR', os.path.expanduser('~/Desktop/Jugglebot'))
 sys.path.insert(0, JUGGLEBOT)
 sys.path.insert(0, os.path.join(JUGGLEBOT, 'tools'))
 import teensy_link_bridge as t  # noqa: E402  (the fw-update tool; brings teensy_link with it)

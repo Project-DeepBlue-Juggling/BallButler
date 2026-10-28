@@ -368,7 +368,7 @@ the fit never saw. Each cell is thrown once and the dense core twice. With the
 30 of them in the core, in about 27 min.
 
 ```bash
-source ~/Desktop/Jugglebot-skills/ros_ws/install/setup.zsh
+source ~/Desktop/Jugglebot/ros_ws/install/setup.zsh
 python run_local_calibration.py run local_validation_plan.json --schedule-to-mocap 0.3 -0.6 \
     --expect-solver-sha cb09095e \
     --apply-correction ~/bb_calibration_sessions/20261009T002142_931068Z/analysis/correction_candidate.json \

@@ -11,7 +11,7 @@ PLAN=${PLAN:-local_validation_plan.json}   # e.g. PLAN=local_validation_plan_ran
 CAND=${CAND:-$HOME/bb_calibration_sessions/20261009T002142_931068Z/analysis/correction_candidate.json}
 SOLVER_SHA=${SOLVER_SHA:-cb09095e}
 DXDY=${DXDY:-"0.3 -0.6"}
-WS=${WS:-$HOME/Desktop/Jugglebot-skills/ros_ws/install/setup.bash}
+WS=${WS:-$HOME/Desktop/Jugglebot/ros_ws/install/setup.bash}
 VENV=$HOME/Desktop/PDJ_venv/venv/bin/activate
 cd "$(dirname "$0")"
 # shellcheck disable=SC1090
